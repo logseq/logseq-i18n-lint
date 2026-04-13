@@ -1,0 +1,163 @@
+# Root of the project to analyze, relative to the directory where you run the binary.
+# Leave empty to use the current working directory.
+project_root = ""
+
+# Directories to scan (relative to project_root).
+# Typical Clojure/ClojureScript layouts: "src", "src/main", "resources/public/cljs".
+include_dirs = [
+  "src",
+]
+
+# Glob patterns for files to skip.
+exclude_patterns = [
+  "**/test/**",
+  "**/tests/**",
+  "**/dev/**",
+  "**/node_modules/**",
+  "**/target/**",
+  "**/static/**",
+]
+
+# File extensions to scan.
+file_extensions = ["clj", "cljs", "cljc"]
+
+# Maximum character length of the text preview in output.
+text_preview_length = 60
+
+# Translation functions — calls to these are skipped entirely.
+# Common names used across popular Clojure i18n libraries (tongue, tempura, tower).
+i18n_functions = [
+  "t",
+]
+
+# Exception/error constructor functions — arguments are developer-facing, not UI text.
+exception_functions = [
+  "throw",
+]
+
+# Alert/notification functions — the FIRST string argument is user-visible text.
+# Calls like (notify! "File saved") will be flagged; add your project's functions here.
+alert_functions = []
+
+# Pure (non-UI) functions — string args inside are not reported even in a UI context.
+# Add data-processing or dispatch functions whose string args are data, not UI text.
+pure_functions = []
+
+# Format/printf functions — ONLY the FIRST argument (the template string) is flagged,
+# and ONLY when the call site is inside a UI context (hiccup or UI function call).
+format_functions = [
+  "format",
+]
+
+# Strings to allow (exact match, also matches after trimming whitespace).
+# Keep this list minimal — prefer allow_patterns for systematic categories.
+allow_strings = []
+
+# Regex patterns to allow.  Each pattern is matched against the raw string literal.
+# The patterns below cover systematic categories of machine-readable strings that
+# are never user-visible text.  They are intentionally conservative; broad
+# word-matching patterns are excluded to avoid masking real issues.
+allow_patterns = [
+  # Email addresses.
+  # e.g., user@example.com, tech.support@domain.org
+  "^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$",
+
+  # URLs and URI schemes.
+  # e.g., https://google.com, sfsymbols://icon, file:///path/to/res
+  "^[a-z]+://[^\\s]*$",
+
+  # Git commands.
+  # e.g., git commit -m "feat", git push origin main
+  "^git\\s+[a-z]+(\\s+.*)?$",
+
+  # CSS color functions.
+  # e.g., rgb(255, 255, 255), rgba(0, 0, 0, 0.5)
+  "^rgba?\\(",
+
+  # CSS custom property access.
+  # e.g., var(--primary-color), var(--spacing-unit)
+  "^var\\(--",
+
+  # Numeric base prefixes.
+  # e.g., 0b (binary), 0o (octal), 0x (hex)
+  "^0[box]$",
+
+  # Regex anchor notation.
+  # e.g., ^starting-with
+  "^\\^",
+
+  # MIME types.
+  # e.g., image/png, application/json, text/html
+  "^[a-z][a-z0-9+.-]+/[a-z0-9.+*-]+$",
+
+  # Web resource references with specific extensions.
+  # e.g., script.js, styles.css, module.mjs
+  "^[a-z][a-z0-9/._-]+\\.(mjs|js|css|wasm)$",
+
+  # Hex colors (3, 4, 6, or 8 digits).
+  # e.g., #fff, #1a2b3c, #ff00ffaa
+  "^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+
+  # DOM element IDs.
+  # e.g., #main-container, #submit-btn
+  "^#[a-z][a-z0-9-]+$",
+
+  # Dot-notation identifiers (icon library names, SF Symbols).
+  # e.g., person.fill, cloud.sun.rain.fill
+  "^[a-z]+\\.[a-z]+(\\.[a-z]+)*$",
+
+  # CSS unit values (supports decimals).
+  # e.g., 10px, 1.5rem, 100%, 500ms
+  "^[0-9]+(\\.[0-9]+)?(px|em|rem|vh|vw|%|pt|s|ms)$",
+
+  # Strings starting with a dot (file fragments or class selectors).
+  # e.g., .hidden, .tmp-file
+  "^\\.",
+
+  # Multi-token CSS class strings.
+  # e.g., "flex items-center justify-between", "bg-red-500 p-4"
+  "(?s)^[-!]?[a-z][a-z0-9!/:_\\[\\].%+*~-]*(?:\\s+[-!]?[a-z][a-z0-9!/:_\\[\\].%+*~-]*)+\\s?$",
+
+  # A single CSS/Tailwind class token.
+  # e.g., flex, hover:bg-blue-500, [mask-type:luminance], !p-5
+  "^[-!]?[a-z][a-z0-9!/:_\\[\\].%+*~-]*$",
+
+  # printf-style format templates.
+  # e.g., %s, [%d%%], #%x
+  "^[^A-Za-z ]*%",
+]
+
+# UI component functions whose string arguments are flagged as user-visible text.
+# Add your project's UI component library here.
+ui_functions = []
+
+# Namespace prefixes where EVERY function is treated as a UI text container.
+# Prefer this over listing every function individually when you have a design system.
+ui_namespaces = []
+
+# HTML/hiccup attributes whose string values are flagged as user-visible text.
+ui_attributes = [
+  "placeholder",
+  "title",
+  "aria-label",
+  "alt",
+  "label",
+]
+
+# Functions whose arguments are NOT checked (logging, introspection, dev tools).
+ignore_context_functions = [
+  "js/console.log",
+  "js/console.warn",
+  "js/console.error",
+  "prn",
+  "println",
+  "log/debug",
+  "log/info",
+  "log/warn",
+  "log/error",
+  "re-pattern",
+  "re-find",
+  "re-matches",
+  "require",
+  "ns",
+]
