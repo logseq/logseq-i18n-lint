@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
 use logseq_i18n_lint::analyzer::{self, DiagnosticKind};
+use logseq_i18n_lint::checker;
 use logseq_i18n_lint::config::AppConfig;
+use logseq_i18n_lint::edn;
+use logseq_i18n_lint::key_collector;
 use logseq_i18n_lint::parser;
 
 fn fixture_path(relative: &str) -> PathBuf {
@@ -13,12 +16,14 @@ fn fixture_path(relative: &str) -> PathBuf {
 fn test_config() -> AppConfig {
     let toml = r#"
         i18n_functions      = ["t", "tr", "translate"]
-        exception_functions = ["ex-info", "throw"]
         alert_functions     = ["notification/show!"]
-        format_functions    = ["format", "goog.string/format"]
         ui_functions        = ["ui/button"]
         ui_namespaces       = ["shui"]
         ui_attributes       = ["placeholder", "title", "aria-label", "alt", "label"]
+
+        [lint]
+        exception_functions = ["ex-info", "throw"]
+        format_functions    = ["format", "goog.string/format"]
         ignore_context_functions = [
             "js/console.log", "js/console.error", "js/console.warn",
             "prn", "println", "log/debug", "log/info", "log/warn", "log/error",
@@ -301,4 +306,246 @@ fn analyze_format_string_fixture() {
         !diags.iter().any(|d| d.text.contains("item-")),
         "format string in non-UI function body should not be reported"
     );
+}
+
+// ─── check-keys tests ───
+
+fn checker_fixture_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/checker")
+}
+
+fn checker_config() -> AppConfig {
+    let toml = r#"
+        include_dirs = ["src"]
+        file_extensions = ["clj", "cljs", "cljc"]
+        i18n_functions = ["t", "tt", "i18n/t"]
+
+        [check-keys]
+        dicts_dir = "dicts"
+        primary_dict = "dicts/en.edn"
+        translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
+        always_used_key_patterns = [
+            "^:shortcut\\.",
+            "^:color\\.",
+        ]
+        ignore_key_namespaces = [
+            "deprecated.config",
+        ]
+
+        [[check-keys.db_ident_defs]]
+        file = "db-idents/property.cljs"
+        def  = "built-in-properties"
+
+        [[check-keys.db_ident_defs]]
+        file = "db-idents/class.cljs"
+        def  = "built-in-classes"
+    "#;
+    toml::from_str(toml).expect("checker test config is valid TOML")
+}
+
+#[test]
+fn edn_parse_dict_keys() {
+    let dict_path = checker_fixture_path().join("dicts/en.edn");
+    let keys = edn::parse_dict_keys(&dict_path).unwrap();
+    assert!(keys.contains(":ui/save"));
+    assert!(keys.contains(":unused/orphan"));
+    assert!(keys.contains(":shortcut.editor/copy"));
+    assert!(keys.contains(":deprecated.config/old-setting"));
+    assert!(keys.len() >= 26, "should parse all keys, found {}", keys.len());
+}
+
+#[test]
+fn key_collector_finds_direct_calls() {
+    let config = checker_config();
+    let src = checker_fixture_path().join("src/app.cljs");
+    let keys = key_collector::collect_referenced_keys(&[src], &config);
+    assert!(keys.contains(":ui/save"), "should find (t :ui/save), found: {keys:?}");
+    assert!(keys.contains(":ui/cancel"), "should find (t :ui/cancel)");
+    assert!(keys.contains(":nav/home"), "should find (tt :nav/home)");
+}
+
+#[test]
+fn key_collector_finds_conditional_keys() {
+    let config = checker_config();
+    let src = checker_fixture_path().join("src/app.cljs");
+    let keys = key_collector::collect_referenced_keys(&[src], &config);
+    assert!(keys.contains(":ui/loading"), "should find :ui/loading from (if ...)");
+    assert!(keys.contains(":ui/ready"), "should find :ui/ready from (if ...)");
+}
+
+#[test]
+fn key_collector_finds_map_payload_keys() {
+    let config = checker_config();
+    let src = checker_fixture_path().join("src/app.cljs");
+    let keys = key_collector::collect_referenced_keys(&[src], &config);
+    assert!(keys.contains(":dialog/confirm"), "should find :i18n-key :dialog/confirm");
+    assert!(keys.contains(":dialog/title"), "should find :title-key :dialog/title");
+    assert!(keys.contains(":dialog/prompt"), "should find :prompt-key :dialog/prompt");
+}
+
+#[test]
+fn key_collector_finds_i18n_key_with_if() {
+    let config = checker_config();
+    let src = checker_fixture_path().join("src/app.cljs");
+    let keys = key_collector::collect_referenced_keys(&[src], &config);
+    assert!(keys.contains(":theme/dark"), "should find :theme/dark from :i18n-key (if ...)");
+    assert!(keys.contains(":theme/light"), "should find :theme/light from :i18n-key (if ...)");
+}
+
+#[test]
+fn key_collector_finds_cond_keys() {
+    let config = checker_config();
+    let src = checker_fixture_path().join("src/app.cljs");
+    let keys = key_collector::collect_referenced_keys(&[src], &config);
+    assert!(keys.contains(":msg/type-a"), "should find :msg/type-a from cond");
+    assert!(keys.contains(":msg/type-b"), "should find :msg/type-b from cond");
+    assert!(keys.contains(":msg/default"), "should find :msg/default from cond");
+}
+
+#[test]
+fn key_collector_symbol_resolution() {
+    let config = checker_config();
+    let src = checker_fixture_path().join("src/app.cljs");
+    let keys = key_collector::collect_referenced_keys(&[src], &config);
+    assert!(keys.contains(":view/option-a"), "should resolve :view/option-a from defonce via (t view-options)");
+    assert!(keys.contains(":view/option-b"), "should resolve :view/option-b from defonce via (t view-options)");
+}
+
+#[test]
+fn checker_finds_unused_keys() {
+    let config = checker_config();
+    let base_dir = checker_fixture_path();
+    let result = checker::check_unused_keys(&config, &base_dir).unwrap();
+
+    assert!(result.unused_keys.contains(&":unused/orphan".to_string()),
+        "should detect :unused/orphan as unused, found: {:?}", result.unused_keys);
+    assert!(result.unused_keys.contains(&":unused/stale".to_string()),
+        "should detect :unused/stale as unused");
+}
+
+#[test]
+fn checker_always_used_filters() {
+    let config = checker_config();
+    let base_dir = checker_fixture_path();
+    let result = checker::check_unused_keys(&config, &base_dir).unwrap();
+
+    // :shortcut.* and :color.* should NOT appear as unused
+    assert!(!result.unused_keys.iter().any(|k| k.starts_with(":shortcut.")),
+        "shortcut keys should be filtered by always_used_key_patterns");
+    assert!(!result.unused_keys.iter().any(|k| k.starts_with(":color.")),
+        "color keys should be filtered by always_used_key_patterns");
+}
+
+#[test]
+fn checker_ignore_namespace_filters() {
+    let config = checker_config();
+    let base_dir = checker_fixture_path();
+    let result = checker::check_unused_keys(&config, &base_dir).unwrap();
+
+    assert!(!result.unused_keys.iter().any(|k| k.starts_with(":deprecated.config")),
+        "deprecated.config keys should be filtered by ignore_key_namespaces");
+}
+
+#[test]
+fn checker_fix_removes_keys() {
+    // Create a temporary copy of the fixture to test fix
+    let temp_dir = tempfile::tempdir().unwrap();
+    let dicts_dir = temp_dir.path().join("dicts");
+    let src_dir = temp_dir.path().join("src");
+    let db_idents_dir = temp_dir.path().join("db-idents");
+    std::fs::create_dir_all(&dicts_dir).unwrap();
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::create_dir_all(&db_idents_dir).unwrap();
+
+    // Copy fixtures
+    std::fs::copy(
+        checker_fixture_path().join("dicts/en.edn"),
+        dicts_dir.join("en.edn"),
+    ).unwrap();
+    std::fs::copy(
+        checker_fixture_path().join("dicts/es.edn"),
+        dicts_dir.join("es.edn"),
+    ).unwrap();
+    std::fs::copy(
+        checker_fixture_path().join("src/app.cljs"),
+        src_dir.join("app.cljs"),
+    ).unwrap();
+    std::fs::copy(
+        checker_fixture_path().join("db-idents/property.cljs"),
+        db_idents_dir.join("property.cljs"),
+    ).unwrap();
+    std::fs::copy(
+        checker_fixture_path().join("db-idents/class.cljs"),
+        db_idents_dir.join("class.cljs"),
+    ).unwrap();
+
+    let config = checker_config();
+    let result = checker::check_unused_keys(&config, temp_dir.path()).unwrap();
+    assert!(!result.unused_keys.is_empty(), "should find unused keys to fix");
+
+    // Fix
+    checker::fix_unused_keys(&config, temp_dir.path(), &result.unused_keys).unwrap();
+
+    // Verify keys are removed from en.edn
+    let en_dict = std::fs::read_to_string(dicts_dir.join("en.edn")).unwrap();
+    assert!(!en_dict.contains(":unused/orphan"), "en.edn should not contain :unused/orphan after fix");
+    assert!(!en_dict.contains(":unused/stale"), "en.edn should not contain :unused/stale after fix");
+    assert!(en_dict.contains(":ui/save"), "en.edn should still contain :ui/save");
+
+    // Verify keys are removed from es.edn too
+    let spanish = std::fs::read_to_string(dicts_dir.join("es.edn")).unwrap();
+    assert!(!spanish.contains(":unused/orphan"), "es.edn should not contain :unused/orphan after fix");
+    assert!(spanish.contains(":ui/save"), "es.edn should still contain :ui/save");
+
+    // Re-check: should find no unused keys
+    let result2 = checker::check_unused_keys(&config, temp_dir.path()).unwrap();
+    assert!(result2.unused_keys.is_empty(),
+        "after fix, no unused keys should remain, found: {:?}", result2.unused_keys);
+}
+
+#[test]
+fn checker_no_false_positives_on_unused() {
+    let config = checker_config();
+    let base_dir = checker_fixture_path();
+    let result = checker::check_unused_keys(&config, &base_dir).unwrap();
+
+    // Used keys should NOT appear in returned unused list
+    let used_keys = [
+        ":ui/save", ":ui/cancel", ":ui/loading", ":ui/ready",
+        ":nav/home", ":dialog/confirm", ":dialog/title", ":dialog/prompt",
+        ":theme/dark", ":theme/light", ":msg/type-a", ":msg/type-b",
+        ":msg/default", ":view/option-a", ":view/option-b",
+    ];
+    for key in &used_keys {
+        assert!(!result.unused_keys.contains(&key.to_string()),
+            "{key} should NOT be reported as unused");
+    }
+}
+
+#[test]
+fn checker_db_ident_keys_are_referenced() {
+    let config = checker_config();
+    let base_dir = checker_fixture_path();
+    let result = checker::check_unused_keys(&config, &base_dir).unwrap();
+
+    // :property.built-in/status (from :logseq.property/status) should NOT be unused
+    assert!(!result.unused_keys.contains(&":property.built-in/status".to_string()),
+        "property.built-in/status should be referenced via db-ident conversion");
+    // :property.built-in/alias (from :block/alias) should NOT be unused
+    assert!(!result.unused_keys.contains(&":property.built-in/alias".to_string()),
+        "property.built-in/alias should be referenced via db-ident conversion");
+    // :class.built-in/task (from :logseq.class/Task) should NOT be unused
+    assert!(!result.unused_keys.contains(&":class.built-in/task".to_string()),
+        "class.built-in/task should be referenced via db-ident conversion");
+}
+
+#[test]
+fn checker_db_ident_phantom_is_unused() {
+    let config = checker_config();
+    let base_dir = checker_fixture_path();
+    let result = checker::check_unused_keys(&config, &base_dir).unwrap();
+
+    // :property.built-in/phantom has no db-ident source, should be unused
+    assert!(result.unused_keys.contains(&":property.built-in/phantom".to_string()),
+        "property.built-in/phantom should be reported as unused (no db-ident source), found: {:?}", result.unused_keys);
 }

@@ -65,23 +65,23 @@ struct AnalysisContext {
 
 impl AnalysisContext {
     fn new(file_path: PathBuf, config: &AppConfig) -> Self {
-        let allow_patterns = RegexSet::new(&config.allow_patterns).unwrap_or_else(|e| {
+        let allow_patterns = RegexSet::new(&config.lint.allow_patterns).unwrap_or_else(|e| {
             eprintln!("warning: invalid allow_patterns regex: {e}");
             RegexSet::empty()
         });
         Self {
             file_path,
-            allow_strings: config.allow_strings.clone(),
+            allow_strings: config.lint.allow_strings.clone(),
             allow_patterns,
             ui_functions: config.ui_functions.clone(),
             ui_namespaces: config.ui_namespaces.clone(),
             ui_attributes: config.ui_attributes.clone(),
-            ignore_context_functions: config.ignore_context_functions.clone(),
+            ignore_context_functions: config.lint.ignore_context_functions.clone(),
             i18n_functions: config.i18n_functions.clone(),
-            exception_functions: config.exception_functions.clone(),
+            exception_functions: config.lint.exception_functions.clone(),
             alert_functions: config.alert_functions.clone(),
-            pure_functions: config.pure_functions.clone(),
-            format_functions: config.format_functions.clone(),
+            pure_functions: config.lint.pure_functions.clone(),
+            format_functions: config.lint.format_functions.clone(),
             diagnostics: Vec::new(),
         }
     }
@@ -641,7 +641,7 @@ fn analyze_conditional_form(
     let in_ui_context = stack.has(FrameKind::Hiccup) || stack.has(FrameKind::UiFnCall);
 
     match head_name {
-        "if" | "if-not" => {
+        "if" | "if-not" | "when" | "when-not" => {
             for item in items.iter().skip(1) {
                 match item {
                     SExp::Str(s, span) if in_ui_context => {
@@ -659,17 +659,6 @@ fn analyze_conditional_form(
                         ctx.report(DiagnosticKind::ConditionalText, *span, s, Some("or".to_string()));
                     }
                     SExp::Str(_, _) => {}
-                    _ => analyze_form(ctx, item, &cond_stack),
-                }
-            }
-        }
-        "when" | "when-not" => {
-            for item in items.iter().skip(1) {
-                match item {
-                    SExp::Str(s, span) if in_ui_context => {
-                        ctx.report(DiagnosticKind::ConditionalText, *span, s, Some(head_name.to_string()));
-                    }
-                    SExp::Str(_, _) => {} // Not in UI context — skip
                     _ => analyze_form(ctx, item, &cond_stack),
                 }
             }
@@ -913,13 +902,15 @@ mod tests {
     fn make_config() -> AppConfig {
         let toml = r#"
             i18n_functions        = ["t", "tt"]
-            exception_functions   = ["ex-info", "throw"]
             alert_functions       = ["notification/show!"]
-            pure_functions        = []
-            format_functions      = ["format", "goog.string/format"]
             ui_functions          = ["ui/button"]
             ui_namespaces         = ["shui"]
             ui_attributes         = ["placeholder", "title", "aria-label", "alt", "label"]
+
+            [lint]
+            exception_functions   = ["ex-info", "throw"]
+            pure_functions        = []
+            format_functions      = ["format", "goog.string/format"]
             ignore_context_functions = [
                 "js/console.log", "js/console.error", "js/console.warn",
                 "prn", "println", "log/debug", "log/info", "log/warn", "log/error",
@@ -970,7 +961,7 @@ mod tests {
 
     #[test]
     fn skips_translation_call() {
-        let diags = analyze_source(r#"[:div (t :greeting)]"#);
+        let diags = analyze_source(r"[:div (t :greeting)]");
         assert!(diags.is_empty());
     }
 
@@ -1114,7 +1105,7 @@ mod tests {
 
     #[test]
     fn skips_ns_require() {
-        let diags = analyze_source(r#"(ns myapp.core (:require [clojure.string :as str]))"#);
+        let diags = analyze_source(r"(ns myapp.core (:require [clojure.string :as str]))");
         assert!(diags.is_empty());
     }
 

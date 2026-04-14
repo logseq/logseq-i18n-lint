@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_parse_simple(c: &mut Criterion) {
-    let source = r##"
+    let source = r#"
 (ns myapp.core
   (:require [clojure.string :as str]))
 
@@ -10,13 +10,16 @@ fn bench_parse_simple(c: &mut Criterion) {
     [:h1 "Hello, " name]
     [:p (str "Welcome to " name "'s page")]
     [:button {:on-click #(do-something)} "Click me"]])
-"##;
+"#;
 
     c.bench_function("parse_simple", |b| {
         b.iter(|| logseq_i18n_lint::parser::parse(source).unwrap());
     });
 }
 
+// The `r##"..."##` delimiter is required here because the content contains `"#`
+// (e.g. `{:href "#root"}`), which would prematurely terminate a `r#"..."#` literal.
+#[allow(clippy::needless_raw_string_hashes)]
 fn bench_parse_nested(c: &mut Criterion) {
     let source = r##"
 (defn complex-component []

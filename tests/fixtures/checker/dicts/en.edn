@@ -1,0 +1,34 @@
+{
+ ;; Used keys
+ :ui/save "Save"
+ :ui/cancel "Cancel"
+ :ui/loading "Loading..."
+ :ui/ready "Ready"
+ :nav/home "Home"
+ :dialog/confirm "Confirm"
+ :dialog/title "Title"
+ :dialog/prompt "Prompt"
+ :msg/type-a "Type A message"
+ :msg/type-b "Type B message"
+ :msg/default "Default message"
+ :theme/dark "Dark"
+ :theme/light "Light"
+ :view/option-a "Option A"
+ :view/option-b "Option B"
+ ;; Unused keys
+ :unused/orphan "This key is never referenced"
+ :unused/stale "This key is also unused"
+ ;; Keys matching always-used patterns
+ :shortcut.editor/copy "Copy"
+ :shortcut.editor/paste "Paste"
+ :color/red "Red"
+ :color/blue "Blue"
+ ;; Keys in ignored namespace
+ :deprecated.config/old-setting "Old setting"
+ ;; Keys derived from db-ident definitions
+ :property.built-in/status "Status"
+ :property.built-in/alias "Alias"
+ :class.built-in/task "Task"
+ ;; Key NOT derivable (no db-ident source) — should be unused
+ :property.built-in/phantom "Phantom property"
+}

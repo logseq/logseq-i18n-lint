@@ -1,0 +1,6 @@
+{
+ :ui/save "Guardar"
+ :ui/cancel "Cancelar"
+ :unused/orphan "Esta clave no se usa"
+ :unused/stale "Esta tampoco"
+}

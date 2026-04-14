@@ -1,6 +1,9 @@
 pub mod analyzer;
+pub mod checker;
 pub mod config;
+pub mod edn;
 pub mod git;
+pub mod key_collector;
 pub mod parser;
 pub mod reporter;
 pub mod scanner;

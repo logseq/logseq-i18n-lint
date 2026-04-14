@@ -79,7 +79,7 @@ fn report_compact(diagnostics: &[Diagnostic], config: &AppConfig, base_dir: &Pat
             .file_path
             .strip_prefix(base_dir)
             .unwrap_or(&diag.file_path);
-        let preview = truncate_text(&diag.text, config.text_preview_length);
+        let preview = truncate_text(&diag.text, config.lint.text_preview_length);
         let kind_str = format!("[{}]", diag.kind);
 
         println!(
@@ -123,7 +123,7 @@ fn report_table(diagnostics: &[Diagnostic], config: &AppConfig, base_dir: &Path)
         let kind_str = diag.kind.to_string();
         let file_str = rel_path.display().to_string().replace('\\', "/");
         let line_str = diag.line.to_string();
-        let text_str = format!("\"{}\"", truncate_text(&diag.text, config.text_preview_length));
+        let text_str = format!("\"{}\"", truncate_text(&diag.text, config.lint.text_preview_length));
 
         max_type_w = max_type_w.max(UnicodeWidthStr::width(kind_str.as_str()));
         max_file_w = max_file_w.max(UnicodeWidthStr::width(file_str.as_str()));

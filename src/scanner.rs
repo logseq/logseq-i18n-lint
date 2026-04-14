@@ -3,16 +3,26 @@ use std::path::{Path, PathBuf};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use walkdir::WalkDir;
 
-use crate::config::AppConfig;
+/// Configuration for a single `scan_files` call, referencing slices from the caller's config.
+pub struct ScanConfig<'a> {
+    pub include_dirs: &'a [String],
+    pub exclude_patterns: &'a [String],
+    pub file_extensions: &'a [String],
+}
 
-pub fn scan_files(config: &AppConfig, base_dir: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-    let dirs = config.resolve_include_dirs(base_dir);
+pub fn scan_files(config: &ScanConfig<'_>, base_dir: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    let dirs: Vec<PathBuf> = config
+        .include_dirs
+        .iter()
+        .map(|d| base_dir.join(d))
+        .filter(|p| p.exists())
+        .collect();
 
     if dirs.is_empty() {
         return Ok(Vec::new());
     }
 
-    let exclude_set = build_glob_set(&config.exclude_patterns)?;
+    let exclude_set = build_glob_set(config.exclude_patterns)?;
 
     let mut files = Vec::new();
     for dir in &dirs {
@@ -22,7 +32,7 @@ pub fn scan_files(config: &AppConfig, base_dir: &Path) -> Result<Vec<PathBuf>, B
             }
             let path = entry.path();
 
-            if !has_target_extension(path, &config.file_extensions) {
+            if !has_target_extension(path, config.file_extensions) {
                 continue;
             }
 

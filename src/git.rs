@@ -21,7 +21,7 @@ pub fn changed_files(config: &AppConfig, base_dir: &Path) -> Result<Vec<PathBuf>
         all_files.extend(files);
     }
 
-    // Committed but not pushed (compared to HEAD)
+    // All uncommitted changes relative to HEAD (staged + unstaged combined)
     if let Ok(files) = git_diff_files(base_dir, &["diff", "--name-only", "HEAD"]) {
         all_files.extend(files);
     }

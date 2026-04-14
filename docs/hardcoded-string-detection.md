@@ -119,6 +119,9 @@ but **only when the call is inside a hiccup vector or UI function call**.
 
 ;; NOT reported — template is a translation call
 [:div (format (t :items-count) count)]
+```
+
+**Configured via:** `format_functions`. Default: `["format", "goog.string/format"]`.
 
 ### 7. `let-text` (Requires UI Context)
 
@@ -131,6 +134,7 @@ hiccup vector or UI function call**.
 
 ;; NOT reported — not in UI context
 (let [path "~/.logseq/config.edn"] (read-file path))
+```
 
 ### 8. `alert-text`
 
@@ -145,10 +149,6 @@ Detects the first string argument to **alert/notification functions**.
 ```
 
 **Configured via:** `alert_functions`. Default: `["notification/show!"]`.
-```
-
-**Configured via:** `format_functions`. Default: `["format", "goog.string/format"]`.
-```
 
 ## Automatic Skip Rules
 
@@ -332,9 +332,10 @@ False negatives occur when a hardcoded UI string is not detected.
    *Fix:* Review `exclude_patterns` — exclude only genuinely non-UI files (tests,
    generated code, pure-data schemas).
 
-5. **String inside a lambda inside UI context.** `(fn ...)` pushes a FnScope barrier
-   that prevents the UI context from propagating. If the lambda directly returns a
-   UI string without a hiccup wrapper, it will not be detected.
+5. **Bare string in a lambda body.** `(fn ...)` creates a scope barrier that resets
+   the surrounding UI context. A string that is a direct child of the lambda (not
+   wrapped in its own hiccup vector) will not be detected. Nested hiccup vectors
+   inside the lambda body **are** analyzed normally.
    *Mitigation:* This is intentional — most lambda bodies contain event handlers and
    comparisons, not UI text. Ensure translated wrappers are used at the call site.
 

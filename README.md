@@ -10,6 +10,9 @@ AST-level detection of hardcoded UI strings in Clojure/ClojureScript source code
 
 - **AST-level analysis** — Custom Clojure/ClojureScript parser, not regex matching
 - **8 detection categories** — hiccup-text, hiccup-attr, alert-text, str-concat, format-string, conditional-text, fn-arg-text, let-text
+- **Unused key detection** — Find translation keys defined in dictionaries but never referenced in code
+- **Auto-fix** — Remove unused keys from all dictionary files with `--fix`
+- **DB-ident key derivation** — Automatically resolves built-in property/class keys from db-ident definitions
 - **Configurable exclusions** — Allow lists, regex patterns, ignore context functions
 - **Git integration** — Check only changed files with `--git-changed`
 - **Parallel processing** — Uses rayon for fast multi-file analysis
@@ -39,85 +42,69 @@ cargo build --release
 ## Quick Start
 
 ```bash
-# Run in the logseq project root
-logseq-i18n-lint
+# Run lint on the project root
+logseq-i18n-lint lint
 
 # Use a custom config
-logseq-i18n-lint -c .i18n-lint.toml
+logseq-i18n-lint -c .i18n-lint.toml lint
 
 # Check only git-changed files
-logseq-i18n-lint --git-changed
+logseq-i18n-lint lint --git-changed
 
 # Compact output for CI
-logseq-i18n-lint -f compact
+logseq-i18n-lint lint -f compact
 
 # Warn only (exit 0 even if issues found)
-logseq-i18n-lint --warn-only
+logseq-i18n-lint lint --warn-only
+
+# Check for unused translation keys
+logseq-i18n-lint check-keys
+
+# Remove unused keys from all dictionaries
+logseq-i18n-lint check-keys --fix
 ```
+
+> **Note:** The configuration flag `-c` is a global flag and must come **before** the subcommand:
+> `logseq-i18n-lint -c .i18n-lint.toml lint`
 
 ## Configuration
 
 Create `.i18n-lint.toml` in your project root. If not present, built-in defaults are used.
 
 ```toml
-# Root of the project to analyse, relative to the directory where you run the binary
-# Leave empty to use the current working directory
+# Path to the project root, relative to the directory that contains the
+# executable.  Resolution is always based on the executable location, so
+# the result is the same no matter which directory you run the binary from.
+# Leave empty when the executable is placed at the project root;
+# set to ".." when it lives in a subdirectory such as bin/.
 project_root = ""
 
-# Directories to scan
-include_dirs = [
-  "src",
-]
-
-# Exclude patterns (glob)
-exclude_patterns = [
-  "**/test/**",
-  "**/node_modules/**",
-]
-
-# File extensions
+# Shared settings used by both subcommands
+include_dirs    = ["src"]
 file_extensions = ["clj", "cljs", "cljc"]
 
-# Max text preview length in output
-text_preview_length = 60
-
-# Strings to allow (exact match)
-allow_strings = ["Logseq"]
-
-# Patterns to allow (regex)
-allow_patterns = ["^https?://"]
-
-# Translation functions — strings passed to these are not flagged
+# Translation functions — calls to these are never flagged
 i18n_functions = ["t", "i18n/t"]
 
-# Alert/notification functions — first string arg is flagged as alert-text
+# Alert/notification functions — first keyword arg is a translation key
 alert_functions = ["notification/show!"]
 
-# Exception functions — first string is a developer message, not UI text
+# UI component functions — keyword args are translation keys
+ui_functions   = []
+ui_namespaces  = []
+
+# Hiccup attribute names whose string values are flagged
+ui_attributes  = ["placeholder", "title", "aria-label", "alt", "label"]
+
+# ── lint settings ──────────────────────────────────────────────────────────────
+[lint]
+exclude_patterns    = ["**/test/**", "**/node_modules/**"]
+text_preview_length = 60
+allow_strings       = ["Logseq"]
+allow_patterns      = ["^https?://"]
 exception_functions = ["throw"]
-
-# Pure/comparison functions — args are data values, not UI text
-pure_functions = []
-
-# Format/printf functions — first arg (template) is flagged only inside UI context
-format_functions = ["format", "goog.string/format"]
-
-# UI function names (string args are flagged)
-ui_functions = ["ui/button"]
-
-# Namespace prefixes whose every function is treated as a UI function
-ui_namespaces = []
-
-# UI attribute names (string values are flagged)
-ui_attributes = [
-  "placeholder",
-  "title",
-  "aria-label",
-  "alt",
-  "label",
-]
-
-# Functions whose args are NOT checked
+pure_functions      = []
+format_functions    = ["format", "goog.string/format"]
 ignore_context_functions = [
   "js/console.log",
   "log/debug",
@@ -125,21 +112,47 @@ ignore_context_functions = [
   "re-pattern",
   "ns",
 ]
+
+# ── check-keys settings ────────────────────────────────────────────────────────
+[check-keys]
+dicts_dir                  = "src/resources/dicts"
+primary_dict               = "src/resources/dicts/en.edn"
+always_used_key_patterns   = ["^:command\\."]
+ignore_key_namespaces      = []
+translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
+
+# Built-in db-ident definitions (one entry per source file)
+[[check-keys.db_ident_defs]]
+file = "deps/db/src/logseq/db/frontend/property.cljs"
+def  = "built-in-properties"
+
+[[check-keys.db_ident_defs]]
+file = "deps/db/src/logseq/db/frontend/class.cljs"
+def  = "built-in-classes"
 ```
 
 ## CLI Reference
 
 ```
-logseq-i18n-lint [OPTIONS]
+logseq-i18n-lint [GLOBAL_OPTIONS] <COMMAND> [COMMAND_OPTIONS]
 
-Options:
+Commands:
+  lint        Detect hardcoded UI strings
+  check-keys  Check for unused translation keys
+
+Global Options:
   -c, --config <PATH>    Configuration file path [default: .i18n-lint.toml]
-  -f, --format <FORMAT>  Output format: table|compact [default: table]
-  -w, --warn-only        Warn only, do not exit with error code
-  -g, --git-changed      Only check git changed files
   -v, --verbose          Verbose output
   -h, --help             Print help
   -V, --version          Print version
+
+lint Options:
+  -f, --format <FORMAT>  Output format: table|compact [default: table]
+  -w, --warn-only        Warn only, do not exit with error code
+  -g, --git-changed      Only check git changed files
+
+check-keys Options:
+  --fix                  Remove unused keys from all dictionary files
 ```
 
 ## Detection Categories
@@ -155,8 +168,10 @@ Options:
 | `let-text` | let binding in UI context | `(let [x "Untitled"] [:div x])` |
 | `alert-text` | Alert/notification messages | `(notification/show! "Done")` |
 
-> **Deep dive:** See [docs/detection-rules.md](docs/detection-rules.md) for how each
+> **Deep dive:** See [docs/hardcoded-string-detection.md](docs/hardcoded-string-detection.md) for how each
 > rule works, automatic skip filters, known limitations, and configuration tips.
+>
+> For unused key detection, see [docs/unused-key-detection.md](docs/unused-key-detection.md).
 
 ## Output Formats
 
