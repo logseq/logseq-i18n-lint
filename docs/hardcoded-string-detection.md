@@ -48,9 +48,16 @@ Detects strings in hiccup attribute maps for **UI-facing attributes** only.
 ;; Reported — placeholder is a UI attribute
 [:input {:placeholder "Search pages..."}]
 
+;; Reported — (or ...) is analyzed in hiccup context
+[:input {:placeholder (or custom "Search here")}]
+
 ;; NOT reported — class is not a UI attribute
 [:div {:class "flex items-center"}]
 ```
+
+For non-literal UI attribute values, the value expression is analyzed in hiccup
+context, so `str-concat`, `conditional-text`, and `format-string` rules apply
+inside it.
 
 **Configured via:** `ui_attributes` in the config file. Default:
 `placeholder`, `title`, `aria-label`, `alt`, `label`.
@@ -138,17 +145,25 @@ hiccup vector or UI function call**.
 
 ### 8. `alert-text`
 
-Detects the first string argument to **alert/notification functions**.
+Detects the first argument of **alert/notification functions** as user-visible text.
+The first argument is always treated as a UI context, so `str-concat`,
+`conditional-text`, and `format-string` rules also apply inside it.
 
 ```clojure
-;; Reported
+;; Reported as alert-text
 (notification/show! "File saved" :success)
+
+;; Reported as str-concat (str inside alert first arg)
+(notification/show! (str "Exported: " filename) :success)
+
+;; Reported as conditional-text
+(notification/show! (if ok? "Done" "Failed") :success)
 
 ;; NOT reported — uses translation
 (notification/show! (t :file-saved) :success)
 ```
 
-**Configured via:** `alert_functions`. Default: `["notification/show!"]`.
+**Configured via:** `alert_functions`.
 
 ## Automatic Skip Rules
 
@@ -161,7 +176,7 @@ Before any context check, strings are filtered by `should_skip_string`:
 | No alphabetic chars (after trim) | `" · "`, `"$10"`, `"< 0.01"`, `"⌘+V"`, `"🎉 "`, `" →"` |
 | Whitespace-only (2+ chars) | `"  "`, `"\n  "` |
 | Exact match in `allow_strings` | `"Logseq"`, `"Contents"` |
-| Regex match in `allow_patterns` | URLs, CSS classes, hex colors, LaTeX commands |
+| Regex match in `allow_patterns` | URLs: `^https?://` |
 
 The **no-alphabetic-chars** rule is the most impactful automatic filter. It skips
 any string that, after trimming whitespace, contains zero Unicode alphabetic characters.
@@ -275,16 +290,18 @@ calls at compile time are invisible:
 - Internal identifiers that look like words but are not translatable: `"Contents"`, `"Label"`, `"Cancelled"`
 - Syntax tokens or paths displayed verbatim: `":END:"`, `"~/.logseq"`
 - Brand names that are not translated in any locale
-- Note: CSS class fragments in `:class` keyword-arg values and leading/trailing whitespace
-  variants are handled automatically — whitespace is stripped before pattern matching, so
-  `"active "` is matched as `"active"` by the single-token CSS class pattern.
+- Note: CSS class fragments are handled automatically — `:class` and other non-UI
+  attribute values are never analyzed. No `allow_patterns` entry is needed for them.
 
 ### When to use `allow_patterns`
 
 - URL schemes: `^https?://`
-- CSS class patterns: `^[-!]?[a-z][a-z0-9!/:_\[\].%+*~-]*$` (single token)
 - Format/template strings: `^[^A-Za-z ]*%`
 - LaTeX commands: `^\\\\`
+
+> **Note:** CSS class strings do not need `allow_patterns` entries. Strings in `:class`
+> and other non-UI attributes are never analyzed — they are suppressed by structural
+> attribute gating, not pattern matching.
 
 ### When to use `pure_functions`
 

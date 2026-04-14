@@ -425,10 +425,19 @@ fn analyze_list_form(ctx: &mut AnalysisContext, items: &[SExp], stack: &ContextS
             }
         }
 
-        // Alert/notification functions — first string arg is user-visible text.
+        // Alert/notification functions — first argument is user-visible text.
+        // Push UiFnCall so nested str/conditional/format calls are caught by their
+        // own rules.  Remaining arguments (status codes, flags) are skipped.
         name if ctx.is_alert_function(name) => {
-            if let Some(SExp::Str(s, span)) = items.get(1) {
-                ctx.report(DiagnosticKind::AlertText, *span, s, Some(name.to_string()));
+            let ui_stack = stack.push(FrameKind::UiFnCall);
+            match items.get(1) {
+                Some(SExp::Str(s, span)) => {
+                    ctx.report(DiagnosticKind::AlertText, *span, s, Some(name.to_string()));
+                }
+                Some(other) => {
+                    analyze_form(ctx, other, &ui_stack);
+                }
+                None => {}
             }
         }
 
@@ -827,16 +836,22 @@ fn analyze_hiccup_attrs(ctx: &mut AnalysisContext, kv_pairs: &[SExp], stack: &Co
 
         if let Some(key) = key_name {
             if ctx.is_ui_attribute(key) {
-                if let SExp::Str(s, span) = &pair[1] {
-                    ctx.report(
-                        DiagnosticKind::HiccupAttr,
-                        *span,
-                        s,
-                        Some(key.to_string()),
-                    );
+                match &pair[1] {
+                    SExp::Str(s, span) => {
+                        ctx.report(
+                            DiagnosticKind::HiccupAttr,
+                            *span,
+                            s,
+                            Some(key.to_string()),
+                        );
+                    }
+                    other => {
+                        // Non-literal UI attribute value (e.g. `(or default "placeholder")`).
+                        // Analyze in the surrounding hiccup context so nested str/conditional/
+                        // alert calls are detected by their own rules.
+                        analyze_form(ctx, other, stack);
+                    }
                 }
-                // Non-literal UI attribute values produce the attribute text at runtime;
-                // they are not containers of nested UI forms.
             } else {
                 // Non-UI attribute values (event handlers, dynamic :class expressions, etc.)
                 // may call alert or UI functions with user-visible strings.
@@ -919,8 +934,6 @@ mod tests {
             allow_strings  = ["Logseq"]
             allow_patterns = [
                 "^https?://",
-                "^[-!]?[a-z][a-z0-9!/:_\\[\\].%+*~-]*$",
-                "(?s)^[-!]?[a-z][a-z0-9!/:_\\[\\].%+*~-]*(?:\\s+[-!]?[a-z][a-z0-9!/:_\\[\\].%+*~-]*)+$",
             ]
         "#;
         toml::from_str(toml).expect("test config is valid TOML")
@@ -967,8 +980,54 @@ mod tests {
 
     #[test]
     fn skips_css_class() {
+        // :class is not a ui_attribute, so the string value is never analyzed —
+        // no allow_pattern needed for CSS classes in attribute positions.
         let diags = analyze_source(r#"[:div {:class "text-sm flex"}]"#);
         assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn detects_fn_arg_text_lowercase() {
+        // Lowercase single-word strings are UI text when used as positional args
+        // to UI functions (e.g. icon button labels).
+        let diags = analyze_source(r#"(shui/button {} "undo")"#);
+        assert_eq!(diags.len(), 1, "lowercase button label should be reported: {diags:?}");
+        assert_eq!(diags[0].kind, DiagnosticKind::FnArgText);
+        assert_eq!(diags[0].text, "undo");
+    }
+
+    #[test]
+    fn detects_str_concat_in_alert_lowercase() {
+        // Multi-word lowercase strings inside str inside an alert function first arg
+        // should be reported as str-concat (they are UI text).
+        let diags = analyze_source(
+            r#"(notification/show! (str "exported " filename " blocks and checksum attrs") :success)"#,
+        );
+        let str_diags: Vec<_> = diags.iter().filter(|d| d.kind == DiagnosticKind::StrConcat).collect();
+        assert!(
+            str_diags.iter().any(|d| d.text.contains("blocks and checksum attrs")),
+            "multi-word lowercase str-concat in alert should be reported: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn detects_hiccup_attr_with_conditional_value() {
+        // Non-literal UI attribute value: the fallback string inside (or ...) should
+        // be reported even though the attr value is not a literal string.
+        let diags = analyze_source(r#"[:input {:placeholder (or custom "Search here")}]"#);
+        assert!(
+            diags.iter().any(|d| d.text == "Search here"),
+            "fallback string inside UI attr conditional should be reported: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn skips_css_class_in_ui_fn_map() {
+        // :class inside a UI function map arg is not a ui_attribute; its string
+        // value must not be reported even when the surrounding context is UiFnCall.
+        let diags = analyze_source(r#"(shui/button {:class "flex items-center"} "Save")"#);
+        assert_eq!(diags.len(), 1, "only the button label should be reported: {diags:?}");
+        assert_eq!(diags[0].text, "Save");
     }
 
     #[test]

@@ -20,8 +20,9 @@ pub struct AppConfig {
     #[serde(default)]
     pub i18n_functions: Vec<String>,
 
-    /// Alert/notification functions — first string arg is user-visible text (lint),
-    /// first keyword arg is a translation key reference (check-keys).
+    /// Alert/notification functions — the first argument is user-visible text (lint).
+    /// It is analyzed in UI context, so `str`, conditional, and format calls inside it
+    /// are also detected.  The first keyword argument is a translation key reference (check-keys).
     #[serde(default)]
     pub alert_functions: Vec<String>,
 
