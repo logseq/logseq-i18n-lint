@@ -1,9 +1,15 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use globset::{Glob, GlobSet, GlobSetBuilder};
+
 use crate::config::AppConfig;
 
-/// Get list of changed files from git that match the configured extensions.
+/// Get list of git-changed files that match the same rules as a full scan:
+///
+/// - file extension is in `config.file_extensions`
+/// - file is under at least one directory in `config.include_dirs`
+/// - file does not match any glob in `config.lint.exclude_patterns`
 ///
 /// `base_dir` must be the root of the repository to analyse (the resolved
 /// `project_root`).  All git commands are executed with that directory as the
@@ -34,14 +40,25 @@ pub fn changed_files(
         all_files.extend(files);
     }
 
-    // Dedup and filter
+    // Dedup before the heavier per-file checks.
     all_files.sort();
     all_files.dedup();
 
+    let include_dirs: Vec<PathBuf> = config.include_dirs.iter().map(PathBuf::from).collect();
+    let exclude_set = build_exclude_set(&config.lint.exclude_patterns)?;
+
     let result: Vec<PathBuf> = all_files
         .into_iter()
+        // Extension filter — same as a full scan.
         .filter(|f| has_target_extension(f, &config.file_extensions))
-        .map(|f| base_dir.join(f))
+        // include_dirs filter: file must be under at least one configured directory.
+        .filter(|f| {
+            let p = Path::new(f.as_str());
+            include_dirs.iter().any(|dir| p.starts_with(dir))
+        })
+        // exclude_patterns filter: file must not match any exclusion glob.
+        .filter(|f| !exclude_set.is_match(f.as_str()))
+        .map(|f| base_dir.join(&f))
         .filter(|p| p.exists())
         .collect();
 
@@ -95,6 +112,14 @@ fn has_target_extension(file: &str, extensions: &[String]) -> bool {
     extensions
         .iter()
         .any(|ext| file.ends_with(&format!(".{ext}")))
+}
+
+fn build_exclude_set(patterns: &[String]) -> Result<GlobSet, globset::Error> {
+    let mut builder = GlobSetBuilder::new();
+    for pattern in patterns {
+        builder.add(Glob::new(pattern)?);
+    }
+    builder.build()
 }
 
 #[cfg(test)]

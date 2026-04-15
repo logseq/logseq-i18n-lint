@@ -55,6 +55,7 @@ ui_attributes = [
 [lint]
 
 # Glob patterns for files to skip during lint.
+# These patterns are also applied when using --git-changed.
 exclude_patterns = [
   "**/test/**",
   "**/tests/**",

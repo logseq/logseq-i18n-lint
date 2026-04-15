@@ -149,7 +149,7 @@ Global Options:
 lint Options:
   -f, --format <FORMAT>  Output format: table|compact [default: table]
   -w, --warn-only        Warn only, do not exit with error code
-  -g, --git-changed      Only check git changed files
+  -g, --git-changed      Only check git-changed files (include_dirs and exclude_patterns still apply)
 
 check-keys Options:
   --fix                  Remove unused keys from all dictionary files
