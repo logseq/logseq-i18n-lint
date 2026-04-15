@@ -37,8 +37,11 @@ Detects string literals that appear as **child nodes** of hiccup vectors.
 ```
 
 **How it works:** When the analyzer encounters a vector starting with a keyword
-(`:div`, `:span`, etc.), it enters Hiccup context. String children after the
-optional attribute map are reported as `hiccup-text`.
+(`:div`, `:span`, etc.), it enters Hiccup context. Only **direct** string
+children after the optional attribute map are reported as `hiccup-text`.
+Strings nested inside function calls within the hiccup vector are NOT reported
+by this rule — they are caught by their own dedicated rules (`str-concat`,
+`conditional-text`, `fn-arg-text`, etc.) when appropriate.
 
 ### 2. `hiccup-attr`
 
@@ -226,6 +229,14 @@ listed in `ui_attributes` are analyzed under a FnScope barrier:
 CSS class fragments, link targets, element IDs, and other non-text keyword-arg
 values are suppressed automatically without any `allow_strings` entries.
 
+The same FnScope barrier is applied to **map arguments** passed to UI functions:
+
+```clojure
+(shui/button {:class (str "btn " active-class)   ; NOT reported — :class is non-UI
+              :placeholder "Search..."}
+  "Save")                                        ; reported as fn-arg-text
+```
+
 ## `def` / `defonce` Handling
 
 Plain string values in `def`/`defonce` are **not reported**:
@@ -272,7 +283,24 @@ Use translation calls at the definition site rather than binding raw strings.
 
 The `fn` scope barrier handles most of these cases.
 
-### 3. Macro-expanded code
+### 3. Strings inside generic function calls
+
+Strings passed as arguments to functions not listed in `ui_functions` are not
+reported, even when the call is inside a hiccup vector:
+
+```clojure
+;; NOT reported — report-item-button is not a UI function
+[:div (report-item-button "clipboard")]
+
+;; NOT reported — assoc is a generic function
+[:div (cond-> options selected? (assoc :class "active"))]
+```
+
+**Workaround:** Add the function to `ui_functions` if its string arguments are
+user-visible text. Use `pure_functions` to explicitly suppress a function's
+string arguments.
+
+### 4. Macro-expanded code
 
 The analyzer works on surface syntax. Macros that expand into hiccup or UI function
 calls at compile time are invisible:
@@ -307,6 +335,7 @@ calls at compile time are invisible:
 
 - AST dispatch functions where string args are node type names: `markup-element-cp`, `inline`
 - String utility functions whose args are data substrings: `text-util/cut-by`
+- Component wrappers whose string args are keys or identifiers: `rum/with-key`, `ui/with-shortcut`
 - Any non-UI function called inside hiccup that produces data, not display text
 
 ### When to use `exclude_patterns`
@@ -320,6 +349,8 @@ calls at compile time are invisible:
 - Logging/debugging: `js/console.log`, `log/debug`
 - CSS utilities: `shui/cn`, `util/classnames`
 - Dialog/popup API calls that take IDs, not text: `shui/popup-show!`
+- Icon functions whose args are icon identifiers: `ui/icon`, `shui/tabler-icon`
+- Shortcut functions whose args are key names: `shui/shortcut`, `shui/shortcut-press!`
 
 ---
 
@@ -355,6 +386,11 @@ False negatives occur when a hardcoded UI string is not detected.
    inside the lambda body **are** analyzed normally.
    *Mitigation:* This is intentional — most lambda bodies contain event handlers and
    comparisons, not UI text. Ensure translated wrappers are used at the call site.
+
+6. **String inside a generic function call in hiccup.** Strings passed to functions
+   not listed in `ui_functions` are not detected — the analyzer cannot know whether
+   the function renders its arguments as text.
+   *Fix:* Add the function to `ui_functions` if its string arguments are user-visible.
 
 ### Avoiding False Positives (incorrect detections)
 

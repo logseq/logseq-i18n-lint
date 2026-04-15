@@ -159,7 +159,7 @@ check-keys Options:
 
 | Type | Description | Example |
 |------|-------------|---------|
-| `hiccup-text` | Text nodes in hiccup vectors | `[:div "Hello"]` |
+| `hiccup-text` | Direct text children of hiccup vectors | `[:div "Hello"]` |
 | `hiccup-attr` | UI text in hiccup attributes | `{:placeholder "Search..."}` |
 | `fn-arg-text` | UI function string arguments | `(ui/button "Submit")` |
 | `str-concat` | String concatenation in UI context | `(str "Error: " msg)` |

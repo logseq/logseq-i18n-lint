@@ -25,7 +25,8 @@ i18n_functions = [
 ]
 
 # Alert/notification functions.
-# lint:       the FIRST string argument is user-visible text.
+# lint:       the FIRST argument is user-visible text; analyzed in UI context so
+#             str-concat, conditional-text, and format-string rules apply inside it.
 # check-keys: the FIRST keyword argument is a translation key reference.
 alert_functions = []
 
@@ -129,9 +130,9 @@ allow_patterns = [
   # e.g., #main-container, #submit-btn
   "^#[a-z][a-z0-9-]+$",
 
-  # Dot-notation identifiers (icon library names, SF Symbols).
-  # e.g., person.fill, cloud.sun.rain.fill
-  "^[a-z]+\\.[a-z]+(\\.[a-z]+)*$",
+  # Dot-notation identifiers (icon library names, SF Symbols, CSS dot-joined classes).
+  # e.g., person.fill, cloud.sun.rain.fill, bg-red-600.top-1.absolute
+  "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$",
 
   # CSS unit values (supports decimals).
   # e.g., 10px, 1.5rem, 100%, 500ms
