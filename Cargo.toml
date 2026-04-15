@@ -3,7 +3,7 @@ name = "logseq-i18n-lint"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.94"
-description = "AST-level detection of hardcoded UI strings in Clojure/ClojureScript source code"
+description = "AST-level i18n checks for hardcoded UI strings and unused translation keys in Clojure/ClojureScript source code."
 license = "MIT"
 
 [dependencies]
