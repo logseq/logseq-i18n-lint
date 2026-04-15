@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_e2e(c: &mut Criterion) {
     // End-to-end benchmark will be filled in M6

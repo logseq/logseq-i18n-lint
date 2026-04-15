@@ -166,11 +166,9 @@ impl AppConfig {
     /// in `resolve_base_dir`.
     pub fn validate_for_lint(&self) -> Result<(), String> {
         if self.include_dirs.is_empty() {
-            return Err(
-                "include_dirs is empty — no source files will be scanned.\n\
+            return Err("include_dirs is empty — no source files will be scanned.\n\
                  Add at least one directory to include_dirs in your config file."
-                    .into(),
-            );
+                .into());
         }
         Ok(())
     }
@@ -186,25 +184,19 @@ impl AppConfig {
     ///   `ui_namespaces`, `alert_functions`, or `translation_key_attributes` is non-empty.
     pub fn validate_for_check_keys(&self) -> Result<(), String> {
         if self.include_dirs.is_empty() {
-            return Err(
-                "include_dirs is empty — no source files will be scanned.\n\
+            return Err("include_dirs is empty — no source files will be scanned.\n\
                  Add at least one directory to include_dirs in your config file."
-                    .into(),
-            );
+                .into());
         }
         if self.check_keys.dicts_dir.is_empty() {
-            return Err(
-                "[check-keys] dicts_dir is not set.\n\
+            return Err("[check-keys] dicts_dir is not set.\n\
                  Specify the directory that contains your EDN dictionary files."
-                    .into(),
-            );
+                .into());
         }
         if self.check_keys.primary_dict.is_empty() {
-            return Err(
-                "[check-keys] primary_dict is not set.\n\
+            return Err("[check-keys] primary_dict is not set.\n\
                  Specify the primary dictionary file whose keys define the key set."
-                    .into(),
-            );
+                .into());
         }
         if self.i18n_functions.is_empty()
             && self.ui_functions.is_empty()
@@ -286,4 +278,3 @@ primary_dict = "dicts/en.edn"
         );
     }
 }
-

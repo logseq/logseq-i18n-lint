@@ -10,7 +10,10 @@ pub struct ScanConfig<'a> {
     pub file_extensions: &'a [String],
 }
 
-pub fn scan_files(config: &ScanConfig<'_>, base_dir: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+pub fn scan_files(
+    config: &ScanConfig<'_>,
+    base_dir: &Path,
+) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
     let dirs: Vec<PathBuf> = config
         .include_dirs
         .iter()
@@ -26,7 +29,11 @@ pub fn scan_files(config: &ScanConfig<'_>, base_dir: &Path) -> Result<Vec<PathBu
 
     let mut files = Vec::new();
     for dir in &dirs {
-        for entry in WalkDir::new(dir).follow_links(true).into_iter().filter_map(Result::ok) {
+        for entry in WalkDir::new(dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(Result::ok)
+        {
             if !entry.file_type().is_file() {
                 continue;
             }
@@ -73,7 +80,10 @@ mod tests {
     #[test]
     fn extension_check() {
         let exts = vec!["cljs".into(), "clj".into()];
-        assert!(has_target_extension(std::path::Path::new("foo.cljs"), &exts));
+        assert!(has_target_extension(
+            std::path::Path::new("foo.cljs"),
+            &exts
+        ));
         assert!(has_target_extension(std::path::Path::new("bar.clj"), &exts));
         assert!(!has_target_extension(std::path::Path::new("baz.rs"), &exts));
         assert!(!has_target_extension(std::path::Path::new("no_ext"), &exts));

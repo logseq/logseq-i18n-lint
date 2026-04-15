@@ -19,7 +19,8 @@ pub fn parse_dict_keys(path: &Path) -> Result<HashSet<String>, Box<dyn std::erro
             // Map entries alternate: key, value, key, value, ...
             for (i, entry) in entries.iter().enumerate() {
                 if i % 2 == 0
-                    && let SExp::Keyword(k, _) = entry {
+                    && let SExp::Keyword(k, _) = entry
+                {
                     keys.insert(format!(":{k}"));
                 }
             }
@@ -40,13 +41,20 @@ pub fn parse_dict_keys(path: &Path) -> Result<HashSet<String>, Box<dyn std::erro
 /// keys to remove were present in this file.  Returns an error if the file
 /// uses a compact (single-line) format, which requires text-surgery rather
 /// than line removal and is not supported by this function.
-pub fn remove_keys_from_dict<S: BuildHasher>(path: &Path, keys_to_remove: &HashSet<String, S>) -> Result<bool, Box<dyn std::error::Error>> {
+pub fn remove_keys_from_dict<S: BuildHasher>(
+    path: &Path,
+    keys_to_remove: &HashSet<String, S>,
+) -> Result<bool, Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(path)?;
     let forms = parser::parse_with_hint(&content, &path.to_string_lossy())?;
 
     // Locate the top-level map's entry list.
     let entries = forms.iter().find_map(|f| {
-        if let SExp::Map(e, _) = f { Some(e.as_slice()) } else { None }
+        if let SExp::Map(e, _) = f {
+            Some(e.as_slice())
+        } else {
+            None
+        }
     });
     let entries = match entries {
         Some(e) if !e.is_empty() => e,
@@ -57,7 +65,8 @@ pub fn remove_keys_from_dict<S: BuildHasher>(path: &Path, keys_to_remove: &HashS
     let mut key_lines: Vec<(usize, bool)> = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         if i % 2 == 0
-            && let SExp::Keyword(k, span) = entry {
+            && let SExp::Keyword(k, span) = entry
+        {
             let line_0 = span.line.saturating_sub(1) as usize;
             key_lines.push((line_0, keys_to_remove.contains(&format!(":{k}"))));
         }
@@ -98,7 +107,8 @@ pub fn remove_keys_from_dict<S: BuildHasher>(path: &Path, keys_to_remove: &HashS
                  not supported for --fix.  Reformat the file to use one key–value \
                  pair per line.",
                 path.display()
-            ).into());
+            )
+            .into());
         }
         for line_idx in start_line..end_exclusive {
             lines_to_remove.insert(line_idx);
@@ -134,11 +144,13 @@ mod tests {
 
     #[test]
     fn parse_simple_dict() {
-        let f = write_temp_edn(r#"{
+        let f = write_temp_edn(
+            r#"{
  :command/copy "Copy"
  :command/paste "Paste"
  :ui/save "Save"
-}"#);
+}"#,
+        );
         let keys = parse_dict_keys(f.path()).unwrap();
         assert_eq!(keys.len(), 3);
         assert!(keys.contains(":command/copy"));
@@ -148,12 +160,14 @@ mod tests {
 
     #[test]
     fn parse_dict_with_comments() {
-        let f = write_temp_edn(r#"{
+        let f = write_temp_edn(
+            r#"{
  ;; UI commands
  :ui/ok "OK"
  ;; Navigation
  :nav/home "Home"
-}"#);
+}"#,
+        );
         let keys = parse_dict_keys(f.path()).unwrap();
         assert_eq!(keys.len(), 2);
         assert!(keys.contains(":ui/ok"));
@@ -169,11 +183,13 @@ mod tests {
 
     #[test]
     fn remove_keys_basic() {
-        let f = write_temp_edn(r#"{
+        let f = write_temp_edn(
+            r#"{
  :keep/one "Keep 1"
  :remove/this "Remove this"
  :keep/two "Keep 2"
-}"#);
+}"#,
+        );
         let mut to_remove = HashSet::new();
         to_remove.insert(":remove/this".to_string());
         remove_keys_from_dict(f.path(), &to_remove).unwrap();
@@ -186,11 +202,13 @@ mod tests {
 
     #[test]
     fn remove_keys_preserves_structure() {
-        let f = write_temp_edn(r#"{
+        let f = write_temp_edn(
+            r#"{
  :a/first "First"
  :a/second "Second"
  :a/third "Third"
-}"#);
+}"#,
+        );
         let mut to_remove = HashSet::new();
         to_remove.insert(":a/second".to_string());
         remove_keys_from_dict(f.path(), &to_remove).unwrap();
@@ -203,12 +221,14 @@ mod tests {
 
     #[test]
     fn remove_keys_with_multiline_value() {
-        let f = write_temp_edn(r#"{
+        let f = write_temp_edn(
+            r#"{
  :keep/one "Keep 1"
  :remove/nested {:inner "val"
                  :other "val2"}
  :keep/two "Keep 2"
-}"#);
+}"#,
+        );
         let mut to_remove = HashSet::new();
         to_remove.insert(":remove/nested".to_string());
         remove_keys_from_dict(f.path(), &to_remove).unwrap();

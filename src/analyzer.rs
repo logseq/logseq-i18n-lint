@@ -93,7 +93,9 @@ impl AnalysisContext {
         }
 
         // Pure numeric
-        if s.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == '+') {
+        if s.chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == '+')
+        {
             return true;
         }
 
@@ -189,8 +191,13 @@ impl AnalysisContext {
         let base = name.rsplit('/').next().unwrap_or(name);
         if matches!(
             base,
-            "starts-with?" | "ends-with?" | "includes?" | "index-of"
-                | "last-index-of" | "blank?" | "split"
+            "starts-with?"
+                | "ends-with?"
+                | "includes?"
+                | "index-of"
+                | "last-index-of"
+                | "blank?"
+                | "split"
         ) {
             return true;
         }
@@ -232,7 +239,11 @@ fn analyze_single_file(path: &Path, config: &AppConfig) -> Vec<Diagnostic> {
 
 /// Analyze pre-parsed AST forms. Used by benchmarks and tests.
 #[must_use]
-pub fn analyze_source_with_config(forms: &[SExp], path: &Path, config: &AppConfig) -> Vec<Diagnostic> {
+pub fn analyze_source_with_config(
+    forms: &[SExp],
+    path: &Path,
+    config: &AppConfig,
+) -> Vec<Diagnostic> {
     let mut ctx = AnalysisContext::new(path.to_path_buf(), config);
 
     for form in forms {
@@ -296,7 +307,9 @@ impl<'a> ContextStack<'a> {
     }
 
     fn in_ignore_context(&self) -> bool {
-        self.has(FrameKind::IgnoreContext) || self.has(FrameKind::NsOrRequire) || self.has(FrameKind::Comment)
+        self.has(FrameKind::IgnoreContext)
+            || self.has(FrameKind::NsOrRequire)
+            || self.has(FrameKind::Comment)
     }
 }
 
@@ -339,7 +352,6 @@ fn analyze_form(ctx: &mut AnalysisContext, form: &SExp, stack: &ContextStack<'_>
         // handlers in analyze_list_form.  Reporting bare strings here based on
         // context alone would flag CSS classes, component IDs, and other
         // non-UI data passed through generic functions inside hiccup vectors.
-
         _ => {}
     }
 }
@@ -380,7 +392,8 @@ fn analyze_list_form(ctx: &mut AnalysisContext, items: &[SExp], stack: &ContextS
         name if {
             let base = name.rsplit('/').next().unwrap_or(name);
             matches!(base, "defc" | "defcs" | "defcc" | "defrc" | "defsc")
-        } => {
+        } =>
+        {
             analyze_def_form(ctx, items, stack);
         }
 
@@ -410,7 +423,12 @@ fn analyze_list_form(ctx: &mut AnalysisContext, items: &[SExp], stack: &ContextS
             match items.get(1) {
                 Some(SExp::Str(s, span)) => {
                     if stack.has(FrameKind::Hiccup) || stack.has(FrameKind::UiFnCall) {
-                        ctx.report(DiagnosticKind::FormatString, *span, s, Some(head_name.to_string()));
+                        ctx.report(
+                            DiagnosticKind::FormatString,
+                            *span,
+                            s,
+                            Some(head_name.to_string()),
+                        );
                     }
                     // Else: not in UI context; nothing to report and no sub-forms to recurse into.
                 }
@@ -707,7 +725,12 @@ fn analyze_conditional_form(
             for item in items.iter().skip(1) {
                 match item {
                     SExp::Str(s, span) if in_ui_context => {
-                        ctx.report(DiagnosticKind::ConditionalText, *span, s, Some(head_name.to_string()));
+                        ctx.report(
+                            DiagnosticKind::ConditionalText,
+                            *span,
+                            s,
+                            Some(head_name.to_string()),
+                        );
                     }
                     SExp::Str(_, _) => {}
                     _ => analyze_form(ctx, item, &cond_stack),
@@ -718,7 +741,12 @@ fn analyze_conditional_form(
             for item in items.iter().skip(1) {
                 match item {
                     SExp::Str(s, span) if in_ui_context => {
-                        ctx.report(DiagnosticKind::ConditionalText, *span, s, Some("or".to_string()));
+                        ctx.report(
+                            DiagnosticKind::ConditionalText,
+                            *span,
+                            s,
+                            Some("or".to_string()),
+                        );
                     }
                     SExp::Str(_, _) => {}
                     _ => analyze_form(ctx, item, &cond_stack),
@@ -747,7 +775,12 @@ fn analyze_conditional_form(
                     if is_result {
                         if let SExp::Str(s, span) = item {
                             if in_ui_context {
-                                ctx.report(DiagnosticKind::ConditionalText, *span, s, Some("case".to_string()));
+                                ctx.report(
+                                    DiagnosticKind::ConditionalText,
+                                    *span,
+                                    s,
+                                    Some("case".to_string()),
+                                );
                             }
                         } else {
                             analyze_form(ctx, item, &cond_stack);
@@ -831,7 +864,12 @@ fn analyze_match_form(ctx: &mut AnalysisContext, items: &[SExp], stack: &Context
             // Result position — may produce UI text.
             match item {
                 SExp::Str(s, span) if in_ui_context => {
-                    ctx.report(DiagnosticKind::ConditionalText, *span, s, Some("match".to_string()));
+                    ctx.report(
+                        DiagnosticKind::ConditionalText,
+                        *span,
+                        s,
+                        Some("match".to_string()),
+                    );
                 }
                 SExp::Str(_, _) => {}
                 _ => analyze_form(ctx, item, &cond_stack),
@@ -891,12 +929,7 @@ fn analyze_hiccup_attrs(ctx: &mut AnalysisContext, kv_pairs: &[SExp], stack: &Co
             if ctx.is_ui_attribute(key) {
                 match &pair[1] {
                     SExp::Str(s, span) => {
-                        ctx.report(
-                            DiagnosticKind::HiccupAttr,
-                            *span,
-                            s,
-                            Some(key.to_string()),
-                        );
+                        ctx.report(DiagnosticKind::HiccupAttr, *span, s, Some(key.to_string()));
                     }
                     other => {
                         // Non-literal UI attribute value (e.g. `(or default "placeholder")`).
@@ -1056,7 +1089,11 @@ mod tests {
         // Lowercase single-word strings are UI text when used as positional args
         // to UI functions (e.g. icon button labels).
         let diags = analyze_source(r#"(shui/button {} "undo")"#);
-        assert_eq!(diags.len(), 1, "lowercase button label should be reported: {diags:?}");
+        assert_eq!(
+            diags.len(),
+            1,
+            "lowercase button label should be reported: {diags:?}"
+        );
         assert_eq!(diags[0].kind, DiagnosticKind::FnArgText);
         assert_eq!(diags[0].text, "undo");
     }
@@ -1068,9 +1105,14 @@ mod tests {
         let diags = analyze_source(
             r#"(notification/show! (str "exported " filename " blocks and checksum attrs") :success)"#,
         );
-        let str_diags: Vec<_> = diags.iter().filter(|d| d.kind == DiagnosticKind::StrConcat).collect();
+        let str_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.kind == DiagnosticKind::StrConcat)
+            .collect();
         assert!(
-            str_diags.iter().any(|d| d.text.contains("blocks and checksum attrs")),
+            str_diags
+                .iter()
+                .any(|d| d.text.contains("blocks and checksum attrs")),
             "multi-word lowercase str-concat in alert should be reported: {diags:?}"
         );
     }
@@ -1091,7 +1133,11 @@ mod tests {
         // :class inside a UI function map arg is not a ui_attribute; its string
         // value must not be reported even when the surrounding context is UiFnCall.
         let diags = analyze_source(r#"(shui/button {:class "flex items-center"} "Save")"#);
-        assert_eq!(diags.len(), 1, "only the button label should be reported: {diags:?}");
+        assert_eq!(
+            diags.len(),
+            1,
+            "only the button label should be reported: {diags:?}"
+        );
         assert_eq!(diags[0].text, "Save");
     }
 
@@ -1118,18 +1164,22 @@ mod tests {
     fn detects_ui_attr_in_ui_fn_map() {
         // UI attribute (:placeholder) inside a UI function map arg SHOULD be reported.
         let diags = analyze_source(r#"(shui/input {:placeholder "Search..." :class "w-full"})"#);
-        assert_eq!(diags.len(), 1, "only placeholder should be reported: {diags:?}");
+        assert_eq!(
+            diags.len(),
+            1,
+            "only placeholder should be reported: {diags:?}"
+        );
         assert_eq!(diags[0].text, "Search...");
     }
 
     #[test]
     fn detects_if_let_else_string_in_hiccup() {
         // else branch of if-let inside hiccup → ConditionalText with "if-let" context.
-        let diags = analyze_source(
-            r#"[:span (if-let [v (get-config)] v "Logseq Sync")]"#,
-        );
+        let diags = analyze_source(r#"[:span (if-let [v (get-config)] v "Logseq Sync")]"#);
         assert!(
-            diags.iter().any(|d| d.kind == DiagnosticKind::ConditionalText && d.text == "Logseq Sync"),
+            diags
+                .iter()
+                .any(|d| d.kind == DiagnosticKind::ConditionalText && d.text == "Logseq Sync"),
             "if-let else string in hiccup should be ConditionalText: {diags:?}"
         );
         assert!(
@@ -1143,11 +1193,15 @@ mod tests {
         // when-let body string inside hiccup → ConditionalText with "when-let" context.
         let diags = analyze_source(r#"[:span (when-let [v (maybe-val)] "Fallback")]"#);
         assert!(
-            diags.iter().any(|d| d.kind == DiagnosticKind::ConditionalText && d.text == "Fallback"),
+            diags
+                .iter()
+                .any(|d| d.kind == DiagnosticKind::ConditionalText && d.text == "Fallback"),
             "when-let body string in hiccup should be ConditionalText: {diags:?}"
         );
         assert!(
-            diags.iter().any(|d| d.context.as_deref() == Some("when-let")),
+            diags
+                .iter()
+                .any(|d| d.context.as_deref() == Some("when-let")),
             "context should be 'when-let': {diags:?}"
         );
     }
@@ -1157,7 +1211,9 @@ mod tests {
         // plain let body string inside hiccup → LetText (not ConditionalText).
         let diags = analyze_source(r#"[:span (let [x 1] "Hello")]"#);
         assert!(
-            diags.iter().any(|d| d.kind == DiagnosticKind::LetText && d.text == "Hello"),
+            diags
+                .iter()
+                .any(|d| d.kind == DiagnosticKind::LetText && d.text == "Hello"),
             "let body string in hiccup should be LetText: {diags:?}"
         );
     }
@@ -1204,33 +1260,50 @@ mod tests {
     #[test]
     fn skips_format_string_outside_ui_context() {
         let diags = analyze_source(r#"(goog.string/format "Found %d items" count)"#);
-        assert!(diags.is_empty(), "format-string outside UI context should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "format-string outside UI context should not be reported: {diags:?}"
+        );
     }
 
     #[test]
     fn detects_conditional_text_in_ui_context() {
         let diags = analyze_source(r#"[:div (if loading? "Loading..." "Ready to go")]"#);
         assert_eq!(diags.len(), 2);
-        assert!(diags.iter().all(|d| d.kind == DiagnosticKind::ConditionalText));
+        assert!(
+            diags
+                .iter()
+                .all(|d| d.kind == DiagnosticKind::ConditionalText)
+        );
     }
 
     #[test]
     fn skips_conditional_text_outside_ui_context() {
         let diags = analyze_source(r#"(if loading? "Loading..." "Ready to go")"#);
-        assert!(diags.is_empty(), "conditional outside UI context should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "conditional outside UI context should not be reported: {diags:?}"
+        );
     }
 
     #[test]
     fn detects_if_not_in_ui_context() {
         let diags = analyze_source(r#"[:div (if-not loaded? "Loading..." "Ready")]"#);
         assert_eq!(diags.len(), 2);
-        assert!(diags.iter().all(|d| d.kind == DiagnosticKind::ConditionalText));
+        assert!(
+            diags
+                .iter()
+                .all(|d| d.kind == DiagnosticKind::ConditionalText)
+        );
     }
 
     #[test]
     fn skips_if_not_outside_ui_context() {
         let diags = analyze_source(r#"(if-not loaded? "Loading..." "Ready")"#);
-        assert!(diags.is_empty(), "if-not outside UI context should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "if-not outside UI context should not be reported: {diags:?}"
+        );
     }
 
     #[test]
@@ -1244,56 +1317,87 @@ mod tests {
     #[test]
     fn skips_or_outside_ui_context() {
         let diags = analyze_source(r#"(or label "Untitled")"#);
-        assert!(diags.is_empty(), "or outside UI context should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "or outside UI context should not be reported: {diags:?}"
+        );
     }
 
     #[test]
     fn skips_ex_info_strings() {
         // Error messages inside ex-info are developer-facing, not UI text
-        let diags = analyze_source(r#"[:div (throw (ex-info "Something went wrong" {:type :error}))]"#);
-        assert!(diags.is_empty(), "ex-info strings should not be reported: {diags:?}");
+        let diags =
+            analyze_source(r#"[:div (throw (ex-info "Something went wrong" {:type :error}))]"#);
+        assert!(
+            diags.is_empty(),
+            "ex-info strings should not be reported: {diags:?}"
+        );
     }
 
     #[test]
     fn skips_non_alphabetic_strings() {
         // Strings with no alphabetic characters after trimming → emoji, symbols, digits
         let diags = analyze_source(r#"[:div " 👉 "]"#);
-        assert!(diags.is_empty(), "emoji-only string should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "emoji-only string should not be reported: {diags:?}"
+        );
 
         let diags = analyze_source(r#"[:div "$10"]"#);
-        assert!(diags.is_empty(), "symbol+digit string should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "symbol+digit string should not be reported: {diags:?}"
+        );
 
         let diags = analyze_source(r#"[:div " · "]"#);
-        assert!(diags.is_empty(), "symbol-only string should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "symbol-only string should not be reported: {diags:?}"
+        );
     }
 
     #[test]
     fn skips_def_plain_string_binding() {
         // Plain (def name "str") is a data constant — should NOT be reported.
         let diags = analyze_source(r#"(def greeting "Hello World")"#);
-        assert!(diags.is_empty(), "def data binding should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "def data binding should not be reported: {diags:?}"
+        );
     }
 
     #[test]
     fn skips_def_docstring() {
         // (def name "docstring" value) — the string is a docstring, skip it.
         let diags = analyze_source(r#"(def config "Config keys that are deprecated" {:k 1})"#);
-        assert!(diags.is_empty(), "def docstring should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "def docstring should not be reported: {diags:?}"
+        );
     }
 
     #[test]
     fn detects_let_text_in_ui_context() {
         // (let [...] ...) INSIDE a UI fn call → LetText should be reported.
         let diags = analyze_source(r#"(shui/button {} (let [label "Click me"] label))"#);
-        let let_texts: Vec<_> = diags.iter().filter(|d| d.kind == DiagnosticKind::LetText).collect();
-        assert!(!let_texts.is_empty(), "let inside UI context should report LetText");
+        let let_texts: Vec<_> = diags
+            .iter()
+            .filter(|d| d.kind == DiagnosticKind::LetText)
+            .collect();
+        assert!(
+            !let_texts.is_empty(),
+            "let inside UI context should report LetText"
+        );
     }
 
     #[test]
     fn skips_let_plain_binding_outside_ui() {
         // (let [x "str"] x) at top level — data binding, no UI context → should NOT be reported.
         let diags = analyze_source(r#"(let [label "Untitled"] label)"#);
-        assert!(diags.is_empty(), "let binding outside UI context should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "let binding outside UI context should not be reported: {diags:?}"
+        );
     }
 
     #[test]
@@ -1346,7 +1450,8 @@ mod tests {
     #[test]
     fn skips_keyword_arg_class_in_ui_fn() {
         // :class keyword arg value in a UI function — CSS class, not UI text.
-        let diags = analyze_source(r#"(ui/button "Submit" :class (str (when active? "active ") "btn"))"#);
+        let diags =
+            analyze_source(r#"(ui/button "Submit" :class (str (when active? "active ") "btn"))"#);
         // "Submit" should be reported; "active " and "btn" (CSS) should not.
         assert_eq!(diags.len(), 1, "only Submit should be reported: {diags:?}");
         assert_eq!(diags[0].text, "Submit");
@@ -1386,7 +1491,11 @@ mod tests {
     fn detects_when_not_inside_hiccup() {
         // when-not inside hiccup — the result string IS UI text.
         let diags = analyze_source(r#"[:div (when-not done? "Still pending")]"#);
-        assert_eq!(diags.len(), 1, "when-not in hiccup should be reported: {diags:?}");
+        assert_eq!(
+            diags.len(),
+            1,
+            "when-not in hiccup should be reported: {diags:?}"
+        );
         assert_eq!(diags[0].kind, DiagnosticKind::ConditionalText);
     }
 
@@ -1406,7 +1515,10 @@ mod tests {
     fn skips_str_concat_outside_ui_context() {
         // (str ...) at top level — no UI context — must NOT be reported.
         let diags = analyze_source(r#"(str "Hello " name)"#);
-        assert!(diags.is_empty(), "str-concat outside UI context should not be reported: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "str-concat outside UI context should not be reported: {diags:?}"
+        );
     }
 
     #[test]
@@ -1425,7 +1537,9 @@ mod tests {
             r#"[:div {:on-click (fn [e] (notification/show! "Saved" :success))} "text"]"#,
         );
         assert!(
-            diags.iter().any(|d| d.kind == DiagnosticKind::AlertText && d.text == "Saved"),
+            diags
+                .iter()
+                .any(|d| d.kind == DiagnosticKind::AlertText && d.text == "Saved"),
             "alert inside hiccup event handler should be detected: {diags:?}"
         );
     }
@@ -1448,7 +1562,9 @@ mod tests {
         // (str "Error: " code) inside hiccup-context format → StrConcat is reported.
         let diags = analyze_source(r#"[:div (format (str "Error: " code) n)]"#);
         assert!(
-            diags.iter().any(|d| d.kind == DiagnosticKind::StrConcat && d.text == "Error:"),
+            diags
+                .iter()
+                .any(|d| d.kind == DiagnosticKind::StrConcat && d.text == "Error:"),
             "str-concat inside format template should be detected in UI context: {diags:?}"
         );
     }
@@ -1477,29 +1593,60 @@ mod tests {
     fn detects_case_results_in_ui_context() {
         let diags = analyze_source(r#"[:div (case status :ok "Done" :err "Failed" "Unknown")]"#);
         let texts: Vec<&str> = diags.iter().map(|d| d.text.as_str()).collect();
-        assert!(texts.contains(&"Done"), "case result should be reported: {diags:?}");
-        assert!(texts.contains(&"Failed"), "case result should be reported: {diags:?}");
-        assert!(texts.contains(&"Unknown"), "case default should be reported: {diags:?}");
+        assert!(
+            texts.contains(&"Done"),
+            "case result should be reported: {diags:?}"
+        );
+        assert!(
+            texts.contains(&"Failed"),
+            "case result should be reported: {diags:?}"
+        );
+        assert!(
+            texts.contains(&"Unknown"),
+            "case default should be reported: {diags:?}"
+        );
     }
 
     #[test]
     fn skips_case_dispatch_string_values() {
         // String dispatch values (not results) must not be reported.
-        let diags = analyze_source(r#"[:div (case label "admin" "Admin panel" "user" "User area")]"#);
+        let diags =
+            analyze_source(r#"[:div (case label "admin" "Admin panel" "user" "User area")]"#);
         let texts: Vec<&str> = diags.iter().map(|d| d.text.as_str()).collect();
-        assert!(!texts.contains(&"admin"), "case dispatch value should not be reported: {diags:?}");
-        assert!(!texts.contains(&"user"), "case dispatch value should not be reported: {diags:?}");
-        assert!(texts.contains(&"Admin panel"), "case result should be reported: {diags:?}");
-        assert!(texts.contains(&"User area"), "case result should be reported: {diags:?}");
+        assert!(
+            !texts.contains(&"admin"),
+            "case dispatch value should not be reported: {diags:?}"
+        );
+        assert!(
+            !texts.contains(&"user"),
+            "case dispatch value should not be reported: {diags:?}"
+        );
+        assert!(
+            texts.contains(&"Admin panel"),
+            "case result should be reported: {diags:?}"
+        );
+        assert!(
+            texts.contains(&"User area"),
+            "case result should be reported: {diags:?}"
+        );
     }
 
     #[test]
     fn detects_cond_results_in_ui_context() {
         let diags = analyze_source(r#"[:div (cond loading? "Loading" done? "Done" :else "Idle")]"#);
         let texts: Vec<&str> = diags.iter().map(|d| d.text.as_str()).collect();
-        assert!(texts.contains(&"Loading"), "cond result should be reported: {diags:?}");
-        assert!(texts.contains(&"Done"), "cond result should be reported: {diags:?}");
-        assert!(texts.contains(&"Idle"), "cond :else result should be reported: {diags:?}");
+        assert!(
+            texts.contains(&"Loading"),
+            "cond result should be reported: {diags:?}"
+        );
+        assert!(
+            texts.contains(&"Done"),
+            "cond result should be reported: {diags:?}"
+        );
+        assert!(
+            texts.contains(&"Idle"),
+            "cond :else result should be reported: {diags:?}"
+        );
     }
 
     #[test]
@@ -1510,10 +1657,22 @@ mod tests {
                  ["Err" _] "Failure")]"#,
         );
         let texts: Vec<&str> = diags.iter().map(|d| d.text.as_str()).collect();
-        assert!(texts.contains(&"Success"), "match result should be reported: {diags:?}");
-        assert!(texts.contains(&"Failure"), "match result should be reported: {diags:?}");
-        assert!(!texts.contains(&"Ok"), "match pattern string should not be reported: {diags:?}");
-        assert!(!texts.contains(&"Err"), "match pattern string should not be reported: {diags:?}");
+        assert!(
+            texts.contains(&"Success"),
+            "match result should be reported: {diags:?}"
+        );
+        assert!(
+            texts.contains(&"Failure"),
+            "match result should be reported: {diags:?}"
+        );
+        assert!(
+            !texts.contains(&"Ok"),
+            "match pattern string should not be reported: {diags:?}"
+        );
+        assert!(
+            !texts.contains(&"Err"),
+            "match pattern string should not be reported: {diags:?}"
+        );
     }
 
     #[test]
@@ -1534,9 +1693,7 @@ mod tests {
         //   (cond-> options (true? no-padding?) (assoc :class (str class " no-padding")) ...)
         // Note: analyze_source uses the default config which does not include "no-padding"
         // in allow_strings, so this test just checks test-position suppression.
-        let diags = analyze_source(
-            r"[:a (cond-> opts (true? no-padding?) (assoc :class base))]",
-        );
+        let diags = analyze_source(r"[:a (cond-> opts (true? no-padding?) (assoc :class base))]");
         // The test arg "true?" is a symbol, nothing to report; no strings present here.
         assert!(
             diags.is_empty(),
@@ -1547,9 +1704,7 @@ mod tests {
     #[test]
     fn skips_cond_arrow_test_string() {
         // String literal in a cond-> test position is a predicate value — not UI text.
-        let diags = analyze_source(
-            r#"[:div (cond-> base (= mode "compact") (str " extra"))]"#,
-        );
+        let diags = analyze_source(r#"[:div (cond-> base (= mode "compact") (str " extra"))]"#);
         assert!(
             !diags.iter().any(|d| d.text == "compact"),
             "string in cond-> test position should not be reported: {diags:?}"
@@ -1559,9 +1714,7 @@ mod tests {
     #[test]
     fn skips_cond_double_arrow_test_string() {
         // cond->> behaves the same as cond-> for string suppression.
-        let diags = analyze_source(
-            r#"[:div (cond->> items (= filter "all") (concat extra))]"#,
-        );
+        let diags = analyze_source(r#"[:div (cond->> items (= filter "all") (concat extra))]"#);
         assert!(
             !diags.iter().any(|d| d.text == "all"),
             "string in cond->> test position should not be reported: {diags:?}"
@@ -1572,11 +1725,12 @@ mod tests {
     fn cond_arrow_still_detects_alert_in_form() {
         // Alert/notification functions are context-independent — should be caught even
         // inside a cond-> form position.
-        let diags = analyze_source(
-            r#"(cond-> x ok? (do (notification/show! "Saved" :success) x))"#,
-        );
+        let diags =
+            analyze_source(r#"(cond-> x ok? (do (notification/show! "Saved" :success) x))"#);
         assert!(
-            diags.iter().any(|d| d.kind == DiagnosticKind::AlertText && d.text == "Saved"),
+            diags
+                .iter()
+                .any(|d| d.kind == DiagnosticKind::AlertText && d.text == "Saved"),
             "alert inside cond-> form should still be reported: {diags:?}"
         );
     }

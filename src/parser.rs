@@ -123,7 +123,10 @@ pub fn parse(source: &str) -> Result<Vec<SExp>, ParseError> {
 }
 
 /// Parse a single file, returning AST and file path info.
-pub fn parse_file(path: &PathBuf, _config: &AppConfig) -> Result<Vec<SExp>, Box<dyn std::error::Error>> {
+pub fn parse_file(
+    path: &PathBuf,
+    _config: &AppConfig,
+) -> Result<Vec<SExp>, Box<dyn std::error::Error>> {
     let source = std::fs::read_to_string(path)?;
     let hint = path.to_string_lossy();
     let forms = parse_with_hint(&source, &hint)?;
@@ -168,7 +171,6 @@ impl<'src> Reader<'src> {
     fn peek(&self) -> Option<u8> {
         self.bytes.get(self.pos).copied()
     }
-
 
     fn advance(&mut self) -> Option<u8> {
         if self.pos < self.bytes.len() {
@@ -233,28 +235,38 @@ impl<'src> Reader<'src> {
             Some(b'\\') => self.read_char_literal(),
             Some(b'\'') => {
                 self.advance();
-                let inner = self.read_form()?.ok_or_else(|| self.error("expected form after '"))?;
+                let inner = self
+                    .read_form()?
+                    .ok_or_else(|| self.error("expected form after '"))?;
                 Ok(Some(SExp::Quote(Box::new(inner), span)))
             }
             Some(b'`') => {
                 self.advance();
-                let inner = self.read_form()?.ok_or_else(|| self.error("expected form after `"))?;
+                let inner = self
+                    .read_form()?
+                    .ok_or_else(|| self.error("expected form after `"))?;
                 Ok(Some(SExp::SyntaxQuote(Box::new(inner), span)))
             }
             Some(b'~') => {
                 self.advance();
                 if self.peek() == Some(b'@') {
                     self.advance();
-                    let inner = self.read_form()?.ok_or_else(|| self.error("expected form after ~@"))?;
+                    let inner = self
+                        .read_form()?
+                        .ok_or_else(|| self.error("expected form after ~@"))?;
                     Ok(Some(SExp::UnquoteSplicing(Box::new(inner), span)))
                 } else {
-                    let inner = self.read_form()?.ok_or_else(|| self.error("expected form after ~"))?;
+                    let inner = self
+                        .read_form()?
+                        .ok_or_else(|| self.error("expected form after ~"))?;
                     Ok(Some(SExp::Unquote(Box::new(inner), span)))
                 }
             }
             Some(b'@') => {
                 self.advance();
-                let inner = self.read_form()?.ok_or_else(|| self.error("expected form after @"))?;
+                let inner = self
+                    .read_form()?
+                    .ok_or_else(|| self.error("expected form after @"))?;
                 Ok(Some(SExp::Deref(Box::new(inner), span)))
             }
             Some(b'^') => self.read_metadata(span),
@@ -301,7 +313,11 @@ impl<'src> Reader<'src> {
                     self.advance();
                     return Ok(items);
                 }
-                None => return Err(self.error(format!("unexpected EOF, expected '{}'", closing as char))),
+                None => {
+                    return Err(
+                        self.error(format!("unexpected EOF, expected '{}'", closing as char))
+                    );
+                }
                 _ => {
                     if let Some(form) = self.read_form()? {
                         items.push(form);
@@ -328,8 +344,9 @@ impl<'src> Reader<'src> {
                         Some(b'"') => s.push('"'),
                         Some(b'u') => {
                             let hex = self.read_n_chars(4)?;
-                            let code = u32::from_str_radix(&hex, 16)
-                                .map_err(|_| self.error(format!("invalid unicode escape: \\u{hex}")))?;
+                            let code = u32::from_str_radix(&hex, 16).map_err(|_| {
+                                self.error(format!("invalid unicode escape: \\u{hex}"))
+                            })?;
 
                             // Handle JavaScript/ClojureScript surrogate pairs: \uD800-\uDBFF
                             if (0xD800..=0xDBFF).contains(&code) {
@@ -343,9 +360,8 @@ impl<'src> Reader<'src> {
                                     if let Ok(low) = u32::from_str_radix(&hex2, 16) {
                                         if (0xDC00..=0xDFFF).contains(&low) {
                                             // Decode surrogate pair to Unicode scalar
-                                            let scalar = 0x10000
-                                                + (code - 0xD800) * 0x400
-                                                + (low - 0xDC00);
+                                            let scalar =
+                                                0x10000 + (code - 0xD800) * 0x400 + (low - 0xDC00);
                                             s.push(char::from_u32(scalar).unwrap_or('\u{FFFD}'));
                                         } else {
                                             s.push('\u{FFFD}');
@@ -357,8 +373,9 @@ impl<'src> Reader<'src> {
                                     s.push('\u{FFFD}');
                                 }
                             } else {
-                                let ch = char::from_u32(code)
-                                    .ok_or_else(|| self.error(format!("invalid unicode code point: {code}")))?;
+                                let ch = char::from_u32(code).ok_or_else(|| {
+                                    self.error(format!("invalid unicode code point: {code}"))
+                                })?;
                                 s.push(ch);
                             }
                         }
@@ -455,7 +472,8 @@ impl<'src> Reader<'src> {
             s if s.starts_with('u') && s.len() == 5 => {
                 let code = u32::from_str_radix(&s[1..], 16)
                     .map_err(|_| self.error(format!("invalid char unicode: \\{s}")))?;
-                char::from_u32(code).ok_or_else(|| self.error(format!("invalid char code: {code}")))?
+                char::from_u32(code)
+                    .ok_or_else(|| self.error(format!("invalid char code: {code}")))?
             }
             s if s.len() == 1 => s.chars().next().expect("non-empty single-char token"),
             other => return Err(self.error(format!("invalid char literal: \\{other}"))),
@@ -506,13 +524,17 @@ impl<'src> Reader<'src> {
             Some(b'\'') => {
                 // Var quote #'symbol
                 self.advance();
-                let inner = self.read_form()?.ok_or_else(|| self.error("expected form after #'"))?;
+                let inner = self
+                    .read_form()?
+                    .ok_or_else(|| self.error("expected form after #'"))?;
                 Ok(Some(SExp::VarQuote(Box::new(inner), span)))
             }
             Some(b'_') => {
                 // Discard #_ form
                 self.advance();
-                let inner = self.read_form()?.ok_or_else(|| self.error("expected form after #_"))?;
+                let inner = self
+                    .read_form()?
+                    .ok_or_else(|| self.error("expected form after #_"))?;
                 Ok(Some(SExp::Discard(Box::new(inner), span)))
             }
             Some(b'^') => {
@@ -551,7 +573,9 @@ impl<'src> Reader<'src> {
                     return Err(self.error("empty tagged literal"));
                 }
                 self.skip_whitespace_and_comments();
-                let value = self.read_form()?.ok_or_else(|| self.error("expected form after tagged literal"))?;
+                let value = self
+                    .read_form()?
+                    .ok_or_else(|| self.error("expected form after tagged literal"))?;
                 Ok(Some(SExp::TaggedLiteral(tag, Box::new(value), span)))
             }
             None => Err(self.error("unexpected EOF after #")),
@@ -560,8 +584,12 @@ impl<'src> Reader<'src> {
 
     fn read_metadata(&mut self, span: Span) -> Result<Option<SExp>, ParseError> {
         self.advance(); // consume '^'
-        let meta = self.read_form()?.ok_or_else(|| self.error("expected metadata form"))?;
-        let target = self.read_form()?.ok_or_else(|| self.error("expected form after metadata"))?;
+        let meta = self
+            .read_form()?
+            .ok_or_else(|| self.error("expected metadata form"))?;
+        let target = self
+            .read_form()?
+            .ok_or_else(|| self.error("expected form after metadata"))?;
         Ok(Some(SExp::Meta(Box::new(meta), Box::new(target), span)))
     }
 

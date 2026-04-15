@@ -24,7 +24,13 @@ impl fmt::Display for OutputFormat {
     }
 }
 
-pub fn report(diagnostics: &[Diagnostic], format: OutputFormat, config: &AppConfig, file_count: usize, base_dir: &Path) {
+pub fn report(
+    diagnostics: &[Diagnostic],
+    format: OutputFormat,
+    config: &AppConfig,
+    file_count: usize,
+    base_dir: &Path,
+) {
     match format {
         OutputFormat::Table => report_table(diagnostics, config, base_dir),
         OutputFormat::Compact => report_compact(diagnostics, config, base_dir),
@@ -37,10 +43,7 @@ pub fn report(diagnostics: &[Diagnostic], format: OutputFormat, config: &AppConf
 fn truncate_text(text: &str, max_len: usize) -> String {
     // Split on \n or \r to get first line
     let has_multiple_lines = text.contains('\n') || text.contains('\r');
-    let first_line = text
-        .split(['\n', '\r'])
-        .next()
-        .unwrap_or(text);
+    let first_line = text.split(['\n', '\r']).next().unwrap_or(text);
 
     let char_count = first_line.chars().count();
     if char_count > max_len {
@@ -101,7 +104,6 @@ struct Row {
 }
 
 fn report_table(diagnostics: &[Diagnostic], config: &AppConfig, base_dir: &Path) {
-
     // Compute column widths using unicode-width for CJK support
     let type_header = "Type";
     let file_header = "File";
@@ -123,7 +125,10 @@ fn report_table(diagnostics: &[Diagnostic], config: &AppConfig, base_dir: &Path)
         let kind_str = diag.kind.to_string();
         let file_str = rel_path.display().to_string().replace('\\', "/");
         let line_str = diag.line.to_string();
-        let text_str = format!("\"{}\"", truncate_text(&diag.text, config.lint.text_preview_length));
+        let text_str = format!(
+            "\"{}\"",
+            truncate_text(&diag.text, config.lint.text_preview_length)
+        );
 
         max_type_w = max_type_w.max(UnicodeWidthStr::width(kind_str.as_str()));
         max_file_w = max_file_w.max(UnicodeWidthStr::width(file_str.as_str()));
@@ -206,13 +211,7 @@ fn print_summary(diagnostics: &[Diagnostic], file_count: usize) {
 
     let detail: Vec<String> = counts
         .iter()
-        .map(|(kind, count)| {
-            format!(
-                "{}: {}",
-                kind.to_string().color(kind_color(*kind)),
-                count
-            )
-        })
+        .map(|(kind, count)| format!("{}: {}", kind.to_string().color(kind_color(*kind)), count))
         .collect();
 
     println!(

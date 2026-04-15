@@ -20,7 +20,10 @@ pub struct CheckResult {
 /// 2. Scan source files and collect referenced keys via AST analysis
 /// 3. Filter out keys matching `always_used_key_patterns` or `ignore_key_namespaces`
 /// 4. Return keys that are defined but not referenced
-pub fn check_unused_keys(config: &AppConfig, base_dir: &Path) -> Result<CheckResult, Box<dyn std::error::Error>> {
+pub fn check_unused_keys(
+    config: &AppConfig,
+    base_dir: &Path,
+) -> Result<CheckResult, Box<dyn std::error::Error>> {
     let dict_path = base_dir.join(&config.check_keys.primary_dict);
     if !dict_path.exists() {
         return Err(format!("primary dictionary not found: {}", dict_path.display()).into());
@@ -40,7 +43,8 @@ pub fn check_unused_keys(config: &AppConfig, base_dir: &Path) -> Result<CheckRes
     let referenced_keys = key_collector::collect_referenced_keys(&files, config);
 
     // Collect keys derived from built-in db-ident definitions
-    let db_ident_keys = key_collector::collect_db_ident_keys(&config.check_keys.db_ident_defs, base_dir);
+    let db_ident_keys =
+        key_collector::collect_db_ident_keys(&config.check_keys.db_ident_defs, base_dir);
 
     let mut all_referenced = referenced_keys;
     all_referenced.extend(db_ident_keys);
@@ -50,9 +54,10 @@ pub fn check_unused_keys(config: &AppConfig, base_dir: &Path) -> Result<CheckRes
     let always_used = if config.check_keys.always_used_key_patterns.is_empty() {
         None
     } else {
-        Some(RegexSet::new(&config.check_keys.always_used_key_patterns).map_err(|e| {
-            format!("invalid always_used_key_patterns regex: {e}")
-        })?)
+        Some(
+            RegexSet::new(&config.check_keys.always_used_key_patterns)
+                .map_err(|e| format!("invalid always_used_key_patterns regex: {e}"))?,
+        )
     };
 
     let ignore_ns = &config.check_keys.ignore_key_namespaces;
@@ -62,13 +67,17 @@ pub fn check_unused_keys(config: &AppConfig, base_dir: &Path) -> Result<CheckRes
         .filter(|key| {
             // Skip keys matching always_used patterns
             if let Some(ref patterns) = always_used
-                && patterns.is_match(key) {
+                && patterns.is_match(key)
+            {
                 return false;
             }
             // Skip keys in ignored namespaces
             // Key format: ":namespace/name" — extract namespace part
             if let Some(ns) = extract_key_namespace(key)
-                && ignore_ns.iter().any(|ignored| ns == ignored || ns.starts_with(&format!("{ignored}."))) {
+                && ignore_ns
+                    .iter()
+                    .any(|ignored| ns == ignored || ns.starts_with(&format!("{ignored}.")))
+            {
                 return false;
             }
             true
@@ -86,7 +95,11 @@ pub fn check_unused_keys(config: &AppConfig, base_dir: &Path) -> Result<CheckRes
 }
 
 /// Remove unused keys from all dictionary files in the dicts directory.
-pub fn fix_unused_keys(config: &AppConfig, base_dir: &Path, unused: &[String]) -> Result<usize, Box<dyn std::error::Error>> {
+pub fn fix_unused_keys(
+    config: &AppConfig,
+    base_dir: &Path,
+    unused: &[String],
+) -> Result<usize, Box<dyn std::error::Error>> {
     let dicts_dir = base_dir.join(&config.check_keys.dicts_dir);
     if !dicts_dir.exists() {
         return Err(format!("dictionary directory not found: {}", dicts_dir.display()).into());
@@ -132,7 +145,10 @@ mod tests {
     #[test]
     fn extract_namespace() {
         assert_eq!(extract_key_namespace(":ui/save"), Some("ui"));
-        assert_eq!(extract_key_namespace(":command.editor/copy"), Some("command.editor"));
+        assert_eq!(
+            extract_key_namespace(":command.editor/copy"),
+            Some("command.editor")
+        );
         assert_eq!(extract_key_namespace(":simple"), Some("simple"));
         assert_eq!(extract_key_namespace(""), None);
     }
@@ -143,12 +159,16 @@ mod tests {
 
         let key = ":config.deprecated/old-key";
         let ns = extract_key_namespace(key).unwrap();
-        let matched = ignore_ns.iter().any(|ignored| ns == ignored || ns.starts_with(&format!("{ignored}.")));
+        let matched = ignore_ns
+            .iter()
+            .any(|ignored| ns == ignored || ns.starts_with(&format!("{ignored}.")));
         assert!(matched);
 
         let key2 = ":config.active/new-key";
         let ns2 = extract_key_namespace(key2).unwrap();
-        let matched2 = ignore_ns.iter().any(|ignored| ns2 == ignored || ns2.starts_with(&format!("{ignored}.")));
+        let matched2 = ignore_ns
+            .iter()
+            .any(|ignored| ns2 == ignored || ns2.starts_with(&format!("{ignored}.")));
         assert!(!matched2);
     }
 }

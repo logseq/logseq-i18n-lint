@@ -21,7 +21,11 @@ use reporter::OutputFormat;
 const DEFAULT_CONFIG_PATH: &str = ".i18n-lint.toml";
 
 #[derive(Parser)]
-#[command(name = "logseq-i18n-lint", version, about = "AST-level detection of hardcoded UI strings in Clojure/ClojureScript")]
+#[command(
+    name = "logseq-i18n-lint",
+    version,
+    about = "AST-level detection of hardcoded UI strings in Clojure/ClojureScript"
+)]
 struct Cli {
     /// Configuration file path
     #[arg(short, long, default_value = ".i18n-lint.toml")]
@@ -67,7 +71,10 @@ fn resolve_base_dir(config: &AppConfig) -> PathBuf {
     let exe_path = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("{}: cannot determine executable path: {e}", "error".red().bold());
+            eprintln!(
+                "{}: cannot determine executable path: {e}",
+                "error".red().bold()
+            );
             process::exit(2);
         }
     };
@@ -83,7 +90,11 @@ fn resolve_base_dir(config: &AppConfig) -> PathBuf {
             eprintln!(
                 "{}: cannot resolve project root '{}' relative to '{}': {e}",
                 "error".red().bold(),
-                if config.project_root.is_empty() { "." } else { &config.project_root },
+                if config.project_root.is_empty() {
+                    "."
+                } else {
+                    &config.project_root
+                },
                 exe_dir.display()
             );
             process::exit(2);
@@ -91,7 +102,14 @@ fn resolve_base_dir(config: &AppConfig) -> PathBuf {
     }
 }
 
-fn run_lint(config: &AppConfig, base_dir: &Path, format: OutputFormat, warn_only: bool, git_changed: bool, verbose: bool) {
+fn run_lint(
+    config: &AppConfig,
+    base_dir: &Path,
+    format: OutputFormat,
+    warn_only: bool,
+    git_changed: bool,
+    verbose: bool,
+) {
     if let Err(msg) = config.validate_for_lint() {
         eprintln!("{}: {msg}", "error".red().bold());
         process::exit(2);
@@ -101,7 +119,10 @@ fn run_lint(config: &AppConfig, base_dir: &Path, format: OutputFormat, warn_only
         match git::changed_files(config, base_dir) {
             Ok(f) => f,
             Err(e) => {
-                eprintln!("{}: failed to get git changed files: {e}", "error".red().bold());
+                eprintln!(
+                    "{}: failed to get git changed files: {e}",
+                    "error".red().bold()
+                );
                 process::exit(2);
             }
         }
@@ -150,7 +171,11 @@ fn run_check_keys(config: &AppConfig, base_dir: &Path, fix: bool, verbose: bool)
     }
 
     if verbose {
-        eprintln!("{}: checking unused keys in {}", "info".cyan(), config.check_keys.primary_dict);
+        eprintln!(
+            "{}: checking unused keys in {}",
+            "info".cyan(),
+            config.check_keys.primary_dict
+        );
     }
 
     let result = match checker::check_unused_keys(config, base_dir) {
@@ -180,7 +205,12 @@ fn run_check_keys(config: &AppConfig, base_dir: &Path, fix: bool, verbose: bool)
         result.unused_keys.len()
     );
     // Print as table
-    let max_width = result.unused_keys.iter().map(String::len).max().unwrap_or(20);
+    let max_width = result
+        .unused_keys
+        .iter()
+        .map(String::len)
+        .max()
+        .unwrap_or(20);
     let col_width = max_width.max(10);
     println!("| {:col_width$} |", "unused-key");
     println!("|-{}-|", "-".repeat(col_width));
@@ -233,22 +263,33 @@ fn main() {
     };
 
     if cli.verbose {
-        eprintln!(
-            "{}: loaded config from {}",
-            "info".cyan(),
-            cli.config
-        );
+        eprintln!("{}: loaded config from {}", "info".cyan(), cli.config);
     }
 
     let base_dir = resolve_base_dir(&config);
 
     if cli.verbose {
-        eprintln!("{}: analysis base directory: {}", "info".cyan(), base_dir.display());
+        eprintln!(
+            "{}: analysis base directory: {}",
+            "info".cyan(),
+            base_dir.display()
+        );
     }
 
     match cli.command {
-        Commands::Lint { format, warn_only, git_changed } => {
-            run_lint(&config, &base_dir, format, warn_only, git_changed, cli.verbose);
+        Commands::Lint {
+            format,
+            warn_only,
+            git_changed,
+        } => {
+            run_lint(
+                &config,
+                &base_dir,
+                format,
+                warn_only,
+                git_changed,
+                cli.verbose,
+            );
         }
         Commands::CheckKeys { fix } => {
             run_check_keys(&config, &base_dir, fix, cli.verbose);

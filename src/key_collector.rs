@@ -16,8 +16,12 @@ pub fn collect_referenced_keys(files: &[PathBuf], config: &AppConfig) -> HashSet
     files
         .par_iter()
         .flat_map(|path| {
-            let Ok(source) = std::fs::read_to_string(path) else { return Vec::new() };
-            let Ok(forms) = parser::parse(&source) else { return Vec::new() };
+            let Ok(source) = std::fs::read_to_string(path) else {
+                return Vec::new();
+            };
+            let Ok(forms) = parser::parse(&source) else {
+                return Vec::new();
+            };
 
             let mut ctx = CollectorContext::new(config);
 
@@ -45,8 +49,12 @@ pub fn collect_db_ident_keys(defs: &[DbIdentDef], base_dir: &Path) -> HashSet<St
     defs.iter()
         .flat_map(|def_entry| {
             let path = base_dir.join(&def_entry.file);
-            let Ok(source) = std::fs::read_to_string(&path) else { return Vec::new() };
-            let Ok(forms) = parser::parse(&source) else { return Vec::new() };
+            let Ok(source) = std::fs::read_to_string(&path) else {
+                return Vec::new();
+            };
+            let Ok(forms) = parser::parse(&source) else {
+                return Vec::new();
+            };
 
             let mut keywords = Vec::new();
             if let Some(value) = find_named_def_value(&forms, &def_entry.def) {
@@ -72,7 +80,8 @@ fn find_named_def_value<'a>(forms: &'a [SExp], def_name: &str) -> Option<&'a SEx
         if let SExp::List(items, _) = form
             && items.len() >= 3
             && let SExp::Symbol(head, _) = &items[0]
-            && (head == "def" || head == "defonce") {
+            && (head == "def" || head == "defonce")
+        {
             // Find the name symbol (skip metadata if present)
             let name_idx = items
                 .iter()
@@ -82,7 +91,8 @@ fn find_named_def_value<'a>(forms: &'a [SExp], def_name: &str) -> Option<&'a SEx
                 .map(|(i, _)| i);
             if let Some(idx) = name_idx
                 && let SExp::Symbol(name, _) = &items[idx]
-                && name == def_name {
+                && name == def_name
+            {
                 return items.get(idx + 1);
             }
         }
@@ -150,17 +160,25 @@ fn extract_all_keywords(expr: &SExp, result: &mut Vec<String>) {
         SExp::Keyword(k, _) => {
             result.push(format!(":{k}"));
         }
-        SExp::List(items, _) | SExp::Vector(items, _) | SExp::Set(items, _)
-        | SExp::Map(items, _) | SExp::AnonFn(items, _) | SExp::ReaderConditional(items, _)
+        SExp::List(items, _)
+        | SExp::Vector(items, _)
+        | SExp::Set(items, _)
+        | SExp::Map(items, _)
+        | SExp::AnonFn(items, _)
+        | SExp::ReaderConditional(items, _)
         | SExp::ReaderConditionalSplicing(items, _) => {
             for item in items {
                 extract_all_keywords(item, result);
             }
         }
-        SExp::Quote(inner, _) | SExp::SyntaxQuote(inner, _)
-        | SExp::Unquote(inner, _) | SExp::UnquoteSplicing(inner, _)
-        | SExp::Deref(inner, _) | SExp::VarQuote(inner, _)
-        | SExp::Meta(_, inner, _) | SExp::TaggedLiteral(_, inner, _)
+        SExp::Quote(inner, _)
+        | SExp::SyntaxQuote(inner, _)
+        | SExp::Unquote(inner, _)
+        | SExp::UnquoteSplicing(inner, _)
+        | SExp::Deref(inner, _)
+        | SExp::VarQuote(inner, _)
+        | SExp::Meta(_, inner, _)
+        | SExp::TaggedLiteral(_, inner, _)
         | SExp::Discard(inner, _) => {
             extract_all_keywords(inner, result);
         }
@@ -204,16 +222,22 @@ fn walk_for_keywords(expr: &SExp, result: &mut Vec<String>) {
         SExp::Keyword(k, _) => {
             result.push(format!(":{k}"));
         }
-        SExp::List(items, _) | SExp::Vector(items, _) | SExp::Set(items, _)
+        SExp::List(items, _)
+        | SExp::Vector(items, _)
+        | SExp::Set(items, _)
         | SExp::Map(items, _) => {
             for item in items {
                 walk_for_keywords(item, result);
             }
         }
-        SExp::Quote(inner, _) | SExp::SyntaxQuote(inner, _)
-        | SExp::Unquote(inner, _) | SExp::UnquoteSplicing(inner, _)
-        | SExp::Deref(inner, _) | SExp::VarQuote(inner, _)
-        | SExp::Meta(_, inner, _) | SExp::TaggedLiteral(_, inner, _) => {
+        SExp::Quote(inner, _)
+        | SExp::SyntaxQuote(inner, _)
+        | SExp::Unquote(inner, _)
+        | SExp::UnquoteSplicing(inner, _)
+        | SExp::Deref(inner, _)
+        | SExp::VarQuote(inner, _)
+        | SExp::Meta(_, inner, _)
+        | SExp::TaggedLiteral(_, inner, _) => {
             walk_for_keywords(inner, result);
         }
         _ => {}
@@ -242,16 +266,25 @@ impl CollectorContext {
 
     /// Check if a function name is an i18n translation function.
     fn is_i18n_fn(&self, name: &str) -> bool {
-        self.i18n_functions.iter().any(|f| f == name || name.ends_with(&format!("/{f}")))
+        self.i18n_functions
+            .iter()
+            .any(|f| f == name || name.ends_with(&format!("/{f}")))
     }
 
     fn is_alert_fn(&self, name: &str) -> bool {
-        self.alert_functions.iter().any(|f| f == name || name.ends_with(&format!("/{f}")))
+        self.alert_functions
+            .iter()
+            .any(|f| f == name || name.ends_with(&format!("/{f}")))
     }
 
     fn is_ui_fn(&self, name: &str) -> bool {
-        self.ui_functions.iter().any(|f| f == name || name.ends_with(&format!("/{f}")))
-            || self.ui_namespaces.iter().any(|ns| name.starts_with(&format!("{ns}/")))
+        self.ui_functions
+            .iter()
+            .any(|f| f == name || name.ends_with(&format!("/{f}")))
+            || self
+                .ui_namespaces
+                .iter()
+                .any(|ns| name.starts_with(&format!("{ns}/")))
     }
 
     fn is_translation_key_attr(&self, attr: &str) -> bool {
@@ -277,7 +310,8 @@ impl CollectorContext {
             && let SExp::Symbol(head, _) = &items[0]
             && (head == "def" || head == "defonce")
             && let SExp::Symbol(name, _) = &items[1]
-            && let Some(val) = find_def_value(items) {
+            && let Some(val) = find_def_value(items)
+        {
             let keywords = extract_keywords_from_expr(val);
             if !keywords.is_empty() {
                 self.symbol_table.insert(name.clone(), keywords);
@@ -292,7 +326,8 @@ impl CollectorContext {
             SExp::List(items, _) => {
                 // Route let-like forms through let-scope tracking
                 if let Some(SExp::Symbol(head, _)) = items.first()
-                    && matches!(head.as_str(), "let" | "when-let" | "if-let" | "loop") {
+                    && matches!(head.as_str(), "let" | "when-let" | "if-let" | "loop")
+                {
                     self.collect_keys_from_let(items);
                     return;
                 }
@@ -302,8 +337,11 @@ impl CollectorContext {
                     self.collect_keys(item);
                 }
             }
-            SExp::Vector(items, _) | SExp::Set(items, _) | SExp::AnonFn(items, _)
-            | SExp::ReaderConditional(items, _) | SExp::ReaderConditionalSplicing(items, _) => {
+            SExp::Vector(items, _)
+            | SExp::Set(items, _)
+            | SExp::AnonFn(items, _)
+            | SExp::ReaderConditional(items, _)
+            | SExp::ReaderConditionalSplicing(items, _) => {
                 for item in items {
                     self.collect_keys(item);
                 }
@@ -314,10 +352,14 @@ impl CollectorContext {
                     self.collect_keys(item);
                 }
             }
-            SExp::Quote(inner, _) | SExp::SyntaxQuote(inner, _)
-            | SExp::Unquote(inner, _) | SExp::UnquoteSplicing(inner, _)
-            | SExp::Deref(inner, _) | SExp::VarQuote(inner, _)
-            | SExp::Meta(_, inner, _) | SExp::Discard(inner, _)
+            SExp::Quote(inner, _)
+            | SExp::SyntaxQuote(inner, _)
+            | SExp::Unquote(inner, _)
+            | SExp::UnquoteSplicing(inner, _)
+            | SExp::Deref(inner, _)
+            | SExp::VarQuote(inner, _)
+            | SExp::Meta(_, inner, _)
+            | SExp::Discard(inner, _)
             | SExp::TaggedLiteral(_, inner, _) => {
                 self.collect_keys(inner);
             }
@@ -439,7 +481,8 @@ impl CollectorContext {
                     // (cond test1 val1 test2 val2 ...) — collect keyword values
                     for (i, item) in items.iter().enumerate().skip(1) {
                         if i % 2 == 0
-                            && let SExp::Keyword(k, _) = item {
+                            && let SExp::Keyword(k, _) = item
+                        {
                             self.keys.insert(format!(":{k}"));
                         }
                     }
@@ -450,14 +493,16 @@ impl CollectorContext {
                     // results (translation keys) are at odd indices (3, 5, 7, ...).
                     for (i, item) in items.iter().enumerate().skip(2) {
                         if i % 2 == 1
-                            && let SExp::Keyword(k, _) = item {
+                            && let SExp::Keyword(k, _) = item
+                        {
                             self.keys.insert(format!(":{k}"));
                         }
                     }
                     // Default value (last item if odd count after head+expr)
                     let after_head = items.len() - 2; // items after head and expr
                     if after_head % 2 == 1
-                        && let Some(SExp::Keyword(k, _)) = items.last() {
+                        && let Some(SExp::Keyword(k, _)) = items.last()
+                    {
                         self.keys.insert(format!(":{k}"));
                     }
                 }
@@ -473,7 +518,8 @@ impl CollectorContext {
     /// Handle `(keyword "ns" expr)` calls for dynamic key construction.
     fn collect_keys_from_keyword_call(&mut self, items: &[SExp]) {
         if items.len() >= 3
-            && let SExp::Str(ns, _) = &items[1] {
+            && let SExp::Str(ns, _) = &items[1]
+        {
             // Try to resolve the name part
             if let SExp::Str(name_part, _) = &items[2] {
                 self.keys.insert(format!(":{ns}/{name_part}"));
@@ -488,7 +534,8 @@ impl CollectorContext {
         let mut i = 0;
         while i + 1 < items.len() {
             if let SExp::Keyword(key, _) = &items[i]
-                && self.is_translation_key_attr(key) {
+                && self.is_translation_key_attr(key)
+            {
                 match &items[i + 1] {
                     SExp::Keyword(val, _) => {
                         self.keys.insert(format!(":{val}"));
@@ -518,11 +565,14 @@ mod tests {
     use super::*;
 
     fn make_config() -> AppConfig {
-        toml::from_str(r#"
+        toml::from_str(
+            r#"
 i18n_functions = ["t", "tt", "i18n/t"]
 [check-keys]
 translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
-"#).unwrap()
+"#,
+        )
+        .unwrap()
     }
 
     fn collect_from_source(source: &str) -> HashSet<String> {
@@ -552,11 +602,13 @@ translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
 
     #[test]
     fn multiple_calls() {
-        let keys = collect_from_source(r"
+        let keys = collect_from_source(
+            r"
             (t :ui/save)
             (tt :ui/cancel)
             (i18n/t :nav/home)
-        ");
+        ",
+        );
         assert_eq!(keys.len(), 3);
         assert!(keys.contains(":ui/save"));
         assert!(keys.contains(":ui/cancel"));
@@ -603,13 +655,15 @@ translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
 
     #[test]
     fn symbol_resolution_via_def() {
-        let _keys = collect_from_source(r"
+        let _keys = collect_from_source(
+            r"
             (defonce sort-options
               [[:view.table/sort-asc :asc]
                [:view.table/sort-desc :desc]])
             (for [[label _] sort-options]
               (t label))
-        ");
+        ",
+        );
         // The symbol table should resolve `label` → keywords from the defonce
         // But since `label` in the for binding shadows the def, the simple
         // symbol-table lookup via (t symbol) works for the defonce name itself
@@ -617,21 +671,25 @@ translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
         // The for destructuring is too complex for simple symbol resolution.
         // These keys are covered by static occurrence in the def value.
         // Let's test the simpler case:
-        let keys2 = collect_from_source(r"
+        let keys2 = collect_from_source(
+            r"
             (def my-key :ui/hello)
             (t my-key)
-        ");
+        ",
+        );
         assert!(keys2.contains(":ui/hello"));
     }
 
     #[test]
     fn def_with_vector_of_keywords() {
-        let keys = collect_from_source(r"
+        let keys = collect_from_source(
+            r"
             (defonce options
               [[:view/option-a :data-a]
                [:view/option-b :data-b]])
             (t options)
-        ");
+        ",
+        );
         // When (t options) is called, look up symbol table
         assert!(keys.contains(":view/option-a"));
         assert!(keys.contains(":view/option-b"));
@@ -641,22 +699,26 @@ translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
 
     #[test]
     fn nested_translation_call() {
-        let keys = collect_from_source(r"
+        let keys = collect_from_source(
+            r"
             (defn render []
               [:div (t :ui/title)
                 [:span (t :ui/subtitle)]])
-        ");
+        ",
+        );
         assert!(keys.contains(":ui/title"));
         assert!(keys.contains(":ui/subtitle"));
     }
 
     #[test]
     fn no_false_positives_from_non_i18n() {
-        let keys = collect_from_source(r"
+        let keys = collect_from_source(
+            r"
             (defn foo [t] (t :not-a-key))
             (log/info :some/keyword)
             {:class :css/class}
-        ");
+        ",
+        );
         // :not-a-key is collected because `t` is in i18n_functions
         // But :some/keyword and :css/class are NOT collected since they're not
         // in i18n contexts
@@ -666,12 +728,14 @@ translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
 
     #[test]
     fn cond_translation() {
-        let keys = collect_from_source(r"
+        let keys = collect_from_source(
+            r"
             (t (cond
                  (= type :a) :msg/type-a
                  (= type :b) :msg/type-b
                  :else :msg/default))
-        ");
+        ",
+        );
         assert!(keys.contains(":msg/type-a"));
         assert!(keys.contains(":msg/type-b"));
         assert!(keys.contains(":msg/default"));
@@ -752,12 +816,14 @@ translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
         // Matches the real Logseq validate.cljs pattern:
         // (let [i18n-key (if condition :key-a :key-b)]
         //   (throw (ex-info "msg" {:payload {:i18n-key i18n-key}})))
-        let keys = collect_from_source(r#"
+        let keys = collect_from_source(
+            r#"
             (let [i18n-key (if condition
                              :page.convert/property-value-to-page
                              :page.convert/block-parent-not-page)]
               (throw (ex-info "err" {:payload {:i18n-key i18n-key}})))
-        "#);
+        "#,
+        );
         assert!(
             keys.contains(":page.convert/property-value-to-page"),
             "should resolve let-bound symbol to :page.convert/property-value-to-page, found: {keys:?}"
@@ -770,11 +836,19 @@ translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
 
     #[test]
     fn when_let_bound_symbol_resolves_keys() {
-        let keys = collect_from_source(r"
+        let keys = collect_from_source(
+            r"
             (when-let [key (if flag :notify/success :notify/failure)]
               {:i18n-key key})
-        ");
-        assert!(keys.contains(":notify/success"), "should resolve when-let bound symbol");
-        assert!(keys.contains(":notify/failure"), "should resolve when-let bound symbol");
+        ",
+        );
+        assert!(
+            keys.contains(":notify/success"),
+            "should resolve when-let bound symbol"
+        );
+        assert!(
+            keys.contains(":notify/failure"),
+            "should resolve when-let bound symbol"
+        );
     }
 }

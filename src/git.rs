@@ -8,7 +8,10 @@ use crate::config::AppConfig;
 /// `base_dir` must be the root of the repository to analyse (the resolved
 /// `project_root`).  All git commands are executed with that directory as the
 /// working directory so that relative paths returned by git are correct.
-pub fn changed_files(config: &AppConfig, base_dir: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+pub fn changed_files(
+    config: &AppConfig,
+    base_dir: &Path,
+) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
     let mut all_files = Vec::new();
 
     // Unstaged changes
@@ -45,7 +48,10 @@ pub fn changed_files(config: &AppConfig, base_dir: &Path) -> Result<Vec<PathBuf>
     Ok(result)
 }
 
-fn git_diff_files(base_dir: &Path, args: &[&str]) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn git_diff_files(
+    base_dir: &Path,
+    args: &[&str],
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let output = Command::new("git")
         .args(args)
         .current_dir(base_dir)
