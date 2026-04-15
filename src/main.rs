@@ -17,6 +17,9 @@ use colored::Colorize;
 use config::AppConfig;
 use reporter::OutputFormat;
 
+/// Default config file path looked up relative to the current working directory.
+const DEFAULT_CONFIG_PATH: &str = ".i18n-lint.toml";
+
 #[derive(Parser)]
 #[command(name = "logseq-i18n-lint", version, about = "AST-level detection of hardcoded UI strings in Clojure/ClojureScript")]
 struct Cli {
@@ -209,6 +212,17 @@ fn run_check_keys(config: &AppConfig, base_dir: &Path, fix: bool, verbose: bool)
 
 fn main() {
     let cli = Cli::parse();
+
+    // If the user explicitly provided -c/--config and the file does not exist,
+    // fail immediately rather than silently falling back to built-in defaults.
+    if cli.config != DEFAULT_CONFIG_PATH && !std::path::Path::new(&cli.config).exists() {
+        eprintln!(
+            "{}: config file not found: {}",
+            "error".red().bold(),
+            cli.config
+        );
+        process::exit(2);
+    }
 
     let config = match AppConfig::load(&cli.config) {
         Ok(c) => c,
