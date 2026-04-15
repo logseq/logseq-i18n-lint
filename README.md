@@ -1,6 +1,6 @@
 # logseq-i18n-lint
 
-AST-level detection of hardcoded UI strings in Clojure/ClojureScript source code.
+AST-level i18n checks for hardcoded UI strings and unused translation keys in Clojure/ClojureScript source code.
 
 ## Overview
 
