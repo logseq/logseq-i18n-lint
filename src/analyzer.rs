@@ -618,6 +618,30 @@ fn analyze_def_form(ctx: &mut AnalysisContext, items: &[SExp], stack: &ContextSt
 fn analyze_let_form(ctx: &mut AnalysisContext, items: &[SExp], stack: &ContextStack<'_>) {
     let let_stack = stack.push(FrameKind::Let);
 
+    // Determine the actual form head name (e.g. "let", "if-let", "when-let", …)
+    // from items[0] so we can produce accurate diagnostic context labels and pick
+    // the right DiagnosticKind for direct body string literals.
+    let head_name = match items.first() {
+        Some(SExp::Symbol(s, _)) => s.as_str(),
+        _ => "let",
+    };
+
+    // Body string literals in let-like forms carry different semantics depending
+    // on whether the form is a pure binding form or a conditional-binding form:
+    //
+    //   (let [label "Click me"] label)            → LetText         (binding result)
+    //   (when-let [v (get)] "Fallback")           → ConditionalText (optional branch)
+    //   (if-let [v (get)] v "Default text")       → ConditionalText (else branch)
+    //
+    // Pure binding forms: let, let!, binding, loop
+    // Conditional forms:  when-let, when-some, if-let, if-some
+    let is_conditional = matches!(head_name, "when-let" | "when-some" | "if-let" | "if-some");
+    let body_kind = if is_conditional {
+        DiagnosticKind::ConditionalText
+    } else {
+        DiagnosticKind::LetText
+    };
+
     // (let [bindings…] body…)
     //
     // Strategy: binding VALUES that are plain string literals are only reported as
@@ -651,15 +675,14 @@ fn analyze_let_form(ctx: &mut AnalysisContext, items: &[SExp], stack: &ContextSt
 
     // Body: always recurse; any hiccup / UI calls inside will be caught by their
     // own rules regardless of UI context.
-    // If a body item is a direct string literal AND we are inside a UI context, report
-    // it as ConditionalText — it is the result expression of an if-let / when-let / let
-    // inside hiccup, e.g.:
-    //   [:span (if-let [v (get-config)] v "Logseq Sync")]
-    //                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^ ConditionalText
+    // If a body item is a direct string literal AND we are inside a UI context,
+    // report it with the appropriate kind:
+    //   - let/binding/loop body strings → LetText   (result of the binding block)
+    //   - when-let/if-let body strings  → ConditionalText (optional/else branch)
     for item in items.iter().skip(2) {
         match item {
             SExp::Str(s, span) if in_ui_context => {
-                ctx.report(DiagnosticKind::ConditionalText, *span, s, Some("if-let".to_string()));
+                ctx.report(body_kind, *span, s, Some(head_name.to_string()));
             }
             _ => analyze_form(ctx, item, &let_stack),
         }
@@ -1101,23 +1124,41 @@ mod tests {
 
     #[test]
     fn detects_if_let_else_string_in_hiccup() {
-        // else branch of if-let inside hiccup is a UI text result.
+        // else branch of if-let inside hiccup → ConditionalText with "if-let" context.
         let diags = analyze_source(
             r#"[:span (if-let [v (get-config)] v "Logseq Sync")]"#,
         );
         assert!(
-            diags.iter().any(|d| d.text == "Logseq Sync"),
-            "if-let else string in hiccup should be reported: {diags:?}"
+            diags.iter().any(|d| d.kind == DiagnosticKind::ConditionalText && d.text == "Logseq Sync"),
+            "if-let else string in hiccup should be ConditionalText: {diags:?}"
+        );
+        assert!(
+            diags.iter().any(|d| d.context.as_deref() == Some("if-let")),
+            "context should be 'if-let': {diags:?}"
         );
     }
 
     #[test]
     fn detects_when_let_body_string_in_hiccup() {
-        // when-let body string inside hiccup is UI text.
+        // when-let body string inside hiccup → ConditionalText with "when-let" context.
         let diags = analyze_source(r#"[:span (when-let [v (maybe-val)] "Fallback")]"#);
         assert!(
-            diags.iter().any(|d| d.text == "Fallback"),
-            "when-let body string in hiccup should be reported: {diags:?}"
+            diags.iter().any(|d| d.kind == DiagnosticKind::ConditionalText && d.text == "Fallback"),
+            "when-let body string in hiccup should be ConditionalText: {diags:?}"
+        );
+        assert!(
+            diags.iter().any(|d| d.context.as_deref() == Some("when-let")),
+            "context should be 'when-let': {diags:?}"
+        );
+    }
+
+    #[test]
+    fn detects_let_body_string_in_hiccup() {
+        // plain let body string inside hiccup → LetText (not ConditionalText).
+        let diags = analyze_source(r#"[:span (let [x 1] "Hello")]"#);
+        assert!(
+            diags.iter().any(|d| d.kind == DiagnosticKind::LetText && d.text == "Hello"),
+            "let body string in hiccup should be LetText: {diags:?}"
         );
     }
 
@@ -1494,7 +1535,7 @@ mod tests {
         // Note: analyze_source uses the default config which does not include "no-padding"
         // in allow_strings, so this test just checks test-position suppression.
         let diags = analyze_source(
-            r#"[:a (cond-> opts (true? no-padding?) (assoc :class base))]"#,
+            r"[:a (cond-> opts (true? no-padding?) (assoc :class base))]",
         );
         // The test arg "true?" is a symbol, nothing to report; no strings present here.
         assert!(
