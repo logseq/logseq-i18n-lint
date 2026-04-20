@@ -421,22 +421,21 @@ fn analyze_list_form(ctx: &mut AnalysisContext, items: &[SExp], stack: &ContextS
         // Configured via `format_functions`; calls outside UI rendering are data ops.
         name if ctx.is_format_function(name) => {
             match items.get(1) {
-                Some(SExp::Str(s, span)) => {
-                    if stack.has(FrameKind::Hiccup) || stack.has(FrameKind::UiFnCall) {
-                        ctx.report(
-                            DiagnosticKind::FormatString,
-                            *span,
-                            s,
-                            Some(head_name.to_string()),
-                        );
-                    }
-                    // Else: not in UI context; nothing to report and no sub-forms to recurse into.
+                Some(SExp::Str(s, span))
+                    if stack.has(FrameKind::Hiccup) || stack.has(FrameKind::UiFnCall) =>
+                {
+                    ctx.report(
+                        DiagnosticKind::FormatString,
+                        *span,
+                        s,
+                        Some(head_name.to_string()),
+                    );
                 }
+                Some(SExp::Str(_, _)) | None => {}
                 Some(other) => {
                     // Template is a complex expression — recurse so nested UI forms are caught.
                     analyze_form(ctx, other, stack);
                 }
-                None => {}
             }
             for item in items.iter().skip(2) {
                 analyze_form(ctx, item, stack);
