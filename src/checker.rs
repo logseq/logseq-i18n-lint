@@ -14,6 +14,18 @@ pub struct CheckResult {
     pub total_referenced: usize,
 }
 
+pub struct MissingKeyEntry {
+    pub key: String,
+    pub file: PathBuf,
+    pub line: u32,
+}
+
+pub struct MissingKeysResult {
+    pub missing_keys: Vec<MissingKeyEntry>,
+    pub total_defined: usize,
+    pub total_referenced: usize,
+}
+
 /// Check for unused translation keys in the project.
 ///
 /// 1. Parse the primary dictionary to get all defined keys
@@ -89,6 +101,82 @@ pub fn check_unused_keys(
 
     Ok(CheckResult {
         unused_keys,
+        total_defined,
+        total_referenced,
+    })
+}
+
+/// Check for translation keys that are referenced in code but not defined in the primary dictionary.
+///
+/// 1. Parse the primary dictionary to get all defined keys
+/// 2. Scan source files and collect referenced keys via AST analysis
+/// 3. Filter out keys matching `always_used_key_patterns` or `ignore_key_namespaces`
+/// 4. Return keys that are referenced but not defined (referenced - defined)
+pub fn check_missing_keys(
+    config: &AppConfig,
+    base_dir: &Path,
+) -> Result<MissingKeysResult, Box<dyn std::error::Error>> {
+    let dict_path = base_dir.join(&config.check_keys.primary_dict);
+    if !dict_path.exists() {
+        return Err(format!("primary dictionary not found: {}", dict_path.display()).into());
+    }
+
+    let defined_keys = edn::parse_dict_keys(&dict_path)?;
+    let total_defined = defined_keys.len();
+
+    let files = scanner::scan_files(
+        &scanner::ScanConfig {
+            include_dirs: &config.include_dirs,
+            exclude_patterns: &config.check_keys.exclude_patterns,
+            file_extensions: &config.file_extensions,
+        },
+        base_dir,
+    )?;
+    let referenced = key_collector::collect_referenced_keys_strict(&files, config);
+    let total_referenced = referenced.len();
+
+    let always_used = if config.check_keys.always_used_key_patterns.is_empty() {
+        None
+    } else {
+        Some(
+            RegexSet::new(&config.check_keys.always_used_key_patterns)
+                .map_err(|e| format!("invalid always_used_key_patterns regex: {e}"))?,
+        )
+    };
+
+    let ignore_ns = &config.check_keys.ignore_key_namespaces;
+
+    let mut missing_keys: Vec<MissingKeyEntry> = referenced
+        .into_iter()
+        .filter(|(key, _)| {
+            if defined_keys.contains(key) {
+                return false;
+            }
+            if let Some(ref patterns) = always_used
+                && patterns.is_match(key)
+            {
+                return false;
+            }
+            if let Some(ns) = extract_key_namespace(key)
+                && ignore_ns
+                    .iter()
+                    .any(|ignored| ns == ignored || ns.starts_with(&format!("{ignored}.")))
+            {
+                return false;
+            }
+            true
+        })
+        .map(|(key, loc)| MissingKeyEntry {
+            key,
+            file: loc.file,
+            line: loc.line,
+        })
+        .collect();
+
+    missing_keys.sort_by(|a, b| a.key.cmp(&b.key));
+
+    Ok(MissingKeysResult {
+        missing_keys,
         total_defined,
         total_referenced,
     })

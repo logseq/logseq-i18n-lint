@@ -61,6 +61,8 @@ enum Commands {
         #[arg(long)]
         fix: bool,
     },
+    /// Check for missing translation keys (used in code but not defined in dictionary)
+    CheckMissing {},
 }
 
 fn resolve_base_dir(config: &AppConfig) -> PathBuf {
@@ -205,18 +207,24 @@ fn run_check_keys(config: &AppConfig, base_dir: &Path, fix: bool, verbose: bool)
         result.unused_keys.len()
     );
     // Print as table
-    let max_width = result
+    let header = "unused-key";
+    let col_w = result
         .unused_keys
         .iter()
         .map(String::len)
         .max()
-        .unwrap_or(20);
-    let col_width = max_width.max(10);
-    println!("| {:col_width$} |", "unused-key");
-    println!("|-{}-|", "-".repeat(col_width));
+        .unwrap_or(0)
+        .max(header.len());
+    let sep_top = format!("┌{}┐", "─".repeat(col_w + 2));
+    let sep_mid = format!("├{}┤", "─".repeat(col_w + 2));
+    let sep_bot = format!("└{}┘", "─".repeat(col_w + 2));
+    println!("{sep_top}");
+    println!("│ {}{} │", header.bold(), " ".repeat(col_w - header.len()));
+    println!("{sep_mid}");
     for key in &result.unused_keys {
-        println!("| {key:>col_width$} |");
+        println!("│ {}{} │", key, " ".repeat(col_w - key.len()));
     }
+    println!("{sep_bot}");
     println!();
 
     if fix {
@@ -236,6 +244,132 @@ fn run_check_keys(config: &AppConfig, base_dir: &Path, fix: bool, verbose: bool)
             }
         }
     }
+
+    process::exit(1);
+}
+
+fn print_missing_keys_table(entries: &[checker::MissingKeyEntry], base_dir: &Path) {
+    let key_header = "missing-key";
+    let file_header = "file";
+    let line_header = "line";
+
+    let key_w = entries
+        .iter()
+        .map(|e| e.key.len())
+        .max()
+        .unwrap_or(0)
+        .max(key_header.len());
+    let file_w = entries
+        .iter()
+        .map(|e| {
+            e.file
+                .strip_prefix(base_dir)
+                .unwrap_or(&e.file)
+                .to_string_lossy()
+                .replace('\\', "/")
+                .len()
+        })
+        .max()
+        .unwrap_or(0)
+        .max(file_header.len());
+    let line_w = line_header.len();
+
+    let sep_top = format!(
+        "┌{}┬{}┬{}┐",
+        "─".repeat(key_w + 2),
+        "─".repeat(file_w + 2),
+        "─".repeat(line_w + 2),
+    );
+    let sep_mid = format!(
+        "├{}┼{}┼{}┤",
+        "─".repeat(key_w + 2),
+        "─".repeat(file_w + 2),
+        "─".repeat(line_w + 2),
+    );
+    let sep_bot = format!(
+        "└{}┴{}┴{}┘",
+        "─".repeat(key_w + 2),
+        "─".repeat(file_w + 2),
+        "─".repeat(line_w + 2),
+    );
+
+    println!("{sep_top}");
+    println!(
+        "│ {}{} │ {}{} │ {}{} │",
+        key_header.bold(),
+        " ".repeat(key_w - key_header.len()),
+        file_header.bold(),
+        " ".repeat(file_w - file_header.len()),
+        line_header.bold(),
+        " ".repeat(line_w - line_header.len()),
+    );
+    println!("{sep_mid}");
+    for entry in entries {
+        let rel = entry
+            .file
+            .strip_prefix(base_dir)
+            .unwrap_or(&entry.file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let line_str = entry.line.to_string();
+        println!(
+            "│ {}{} │ {}{} │ {}{} │",
+            entry.key,
+            " ".repeat(key_w - entry.key.len()),
+            rel,
+            " ".repeat(file_w - rel.len()),
+            " ".repeat(line_w - line_str.len()),
+            line_str,
+        );
+    }
+    println!("{sep_bot}");
+}
+
+fn run_check_missing(config: &AppConfig, base_dir: &Path, verbose: bool) {
+    if let Err(msg) = config.validate_for_check_missing() {
+        eprintln!("{}: {msg}", "error".red().bold());
+        process::exit(2);
+    }
+
+    if verbose {
+        eprintln!(
+            "{}: checking missing keys against {}",
+            "info".cyan(),
+            config.check_keys.primary_dict
+        );
+    }
+
+    let result = match checker::check_missing_keys(config, base_dir) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("{}: {e}", "error".red().bold());
+            process::exit(2);
+        }
+    };
+
+    if verbose {
+        eprintln!(
+            "{}: {} defined, {} referenced",
+            "info".cyan(),
+            result.total_defined,
+            result.total_referenced,
+        );
+    }
+
+    if result.missing_keys.is_empty() {
+        println!(
+            "{}",
+            "All referenced keys are defined in dictionary.".green()
+        );
+        process::exit(0);
+    }
+
+    println!(
+        "\n{} missing translation key(s) found:\n",
+        result.missing_keys.len()
+    );
+    print_missing_keys_table(&result.missing_keys, base_dir);
+    println!();
 
     process::exit(1);
 }
@@ -293,6 +427,9 @@ fn main() {
         }
         Commands::CheckKeys { fix } => {
             run_check_keys(&config, &base_dir, fix, cli.verbose);
+        }
+        Commands::CheckMissing {} => {
+            run_check_missing(&config, &base_dir, cli.verbose);
         }
     }
 }

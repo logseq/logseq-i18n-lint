@@ -1,6 +1,6 @@
 # logseq-i18n-lint
 
-AST-level i18n checks for hardcoded UI strings and unused translation keys in Clojure/ClojureScript source code.
+AST-level i18n checks for hardcoded UI strings, unused translation keys, and missing translation keys in Clojure/ClojureScript source code.
 
 ## Overview
 
@@ -11,6 +11,7 @@ AST-level i18n checks for hardcoded UI strings and unused translation keys in Cl
 - **AST-level analysis** — Custom Clojure/ClojureScript parser, not regex matching
 - **8 detection categories** — hiccup-text, hiccup-attr, alert-text, str-concat, format-string, conditional-text, fn-arg-text, let-text
 - **Unused key detection** — Find translation keys defined in dictionaries but never referenced in code
+- **Missing key detection** — Find translation keys referenced in code but absent from the dictionary
 - **Auto-fix** — Remove unused keys from all dictionary files with `--fix`
 - **DB-ident key derivation** — Automatically resolves built-in property/class keys from db-ident definitions
 - **Configurable exclusions** — Allow lists, regex patterns, ignore context functions
@@ -62,6 +63,9 @@ logseq-i18n-lint check-keys
 
 # Remove unused keys from all dictionaries
 logseq-i18n-lint check-keys --fix
+
+# Check for keys used in code but missing from the dictionary
+logseq-i18n-lint check-missing
 ```
 
 > **Note:** The configuration flag `-c` is a global flag and must come **before** the subcommand:
@@ -114,6 +118,8 @@ ignore_context_functions = [
 ]
 
 # ── check-keys settings ────────────────────────────────────────────────────────
+# Both `check-keys` and `check-missing` read from this section.
+# check-missing only uses: primary_dict, always_used_key_patterns, ignore_key_namespaces.
 [check-keys]
 dicts_dir                  = "src/resources/dicts"
 primary_dict               = "src/resources/dicts/en.edn"
@@ -137,8 +143,9 @@ def  = "built-in-classes"
 logseq-i18n-lint [GLOBAL_OPTIONS] <COMMAND> [COMMAND_OPTIONS]
 
 Commands:
-  lint        Detect hardcoded UI strings
-  check-keys  Check for unused translation keys
+  lint           Detect hardcoded UI strings
+  check-keys     Check for unused translation keys (defined in dictionary but not used in code)
+  check-missing  Check for missing translation keys (used in code but not defined in dictionary)
 
 Global Options:
   -c, --config <PATH>    Configuration file path [default: .i18n-lint.toml]
@@ -171,7 +178,7 @@ check-keys Options:
 > **Deep dive:** See [docs/hardcoded-string-detection.md](docs/hardcoded-string-detection.md) for how each
 > rule works, automatic skip filters, known limitations, and configuration tips.
 >
-> For unused key detection, see [docs/unused-key-detection.md](docs/unused-key-detection.md).
+> For unused and missing key detection, see [docs/unused-key-detection.md](docs/unused-key-detection.md).
 
 ## Output Formats
 

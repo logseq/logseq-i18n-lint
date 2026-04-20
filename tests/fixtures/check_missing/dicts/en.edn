@@ -1,0 +1,8 @@
+{
+ ;; Defined keys — these should NOT appear as missing
+ :ui/save "Save"
+ :ui/cancel "Cancel"
+ :nav/home "Home"
+ ;; A deprecated key in an ignored namespace
+ :deprecated/old-key "Old key"
+}

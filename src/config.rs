@@ -214,6 +214,39 @@ impl AppConfig {
         }
         Ok(())
     }
+
+    /// Validate that fields required by the `check-missing` subcommand are configured.
+    ///
+    /// Similar to `validate_for_check_keys` but does NOT require `dicts_dir` — this
+    /// subcommand only reads `primary_dict` for the defined-key set and does not
+    /// write to or iterate over any dictionary directory.
+    pub fn validate_for_check_missing(&self) -> Result<(), String> {
+        if self.include_dirs.is_empty() {
+            return Err("include_dirs is empty — no source files will be scanned.\n\
+                 Add at least one directory to include_dirs in your config file."
+                .into());
+        }
+        if self.check_keys.primary_dict.is_empty() {
+            return Err("[check-keys] primary_dict is not set.\n\
+                 Specify the primary dictionary file whose keys define the key set."
+                .into());
+        }
+        if self.i18n_functions.is_empty()
+            && self.ui_functions.is_empty()
+            && self.ui_namespaces.is_empty()
+            && self.alert_functions.is_empty()
+            && self.check_keys.translation_key_attributes.is_empty()
+        {
+            return Err(
+                "no key-reference mechanisms are configured: i18n_functions, \
+                 ui_functions, ui_namespaces, alert_functions, and \
+                 translation_key_attributes are all empty.\n\
+                 All translation keys would appear missing."
+                    .into(),
+            );
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

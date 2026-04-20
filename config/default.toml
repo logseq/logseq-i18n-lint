@@ -180,10 +180,17 @@ ignore_context_functions = [
 ]
 
 # ── [check-keys] settings ──────────────────────────────────────────────────────
+#
+# Both the `check-keys` and `check-missing` subcommands read from this section.
+#
+# Field usage by subcommand:
+#   check-keys:    all fields below
+#   check-missing: primary_dict, always_used_key_patterns, ignore_key_namespaces
+#                  (dicts_dir and db_ident_defs are not used)
 
 [check-keys]
 
-# Glob patterns for files to skip during check-keys.
+# Glob patterns for files to skip during check-keys / check-missing.
 # Separate from [lint].exclude_patterns so a file can be excluded from lint
 # but still scanned for translation key references.
 exclude_patterns = [
@@ -196,28 +203,32 @@ exclude_patterns = [
 ]
 
 # Directory containing dictionary EDN files (relative to project_root).
-# Used by the `check-keys --fix` operation to locate all dictionary files.
+# Used by `check-keys` (and `check-keys --fix`) to locate all dictionary files.
+# Not read by `check-missing`.
 dicts_dir = ""
 
 # Primary dictionary file (relative to project_root).
-# Its keys define the complete set of translation keys to check for usage.
+# Its keys define the complete set of translation keys.
+# Used by both `check-keys` and `check-missing`.
 primary_dict = ""
 
-# Key patterns that are always considered "used" (regex, matched against the full key string).
+# Key patterns that are always considered "used" / "defined" (regex, matched against the full key string).
 # Use this for dynamically generated keys that cannot be detected by static analysis.
+# Applied by both `check-keys` and `check-missing`.
 always_used_key_patterns = []
 
-# Key namespace prefixes to exclude from unused-key checking.
-# Keys whose namespace matches any of these prefixes are skipped.
+# Key namespace prefixes to exclude from checking entirely.
+# Keys whose namespace matches any prefix are skipped.
+# Applied by both `check-keys` and `check-missing`.
 ignore_key_namespaces = []
 
 # Map attribute keys whose keyword values are translation key references.
-# Combined with ui_attributes during check-keys analysis.
+# Combined with ui_attributes during check-keys / check-missing analysis.
 translation_key_attributes = []
 
 # Built-in db-ident definition sources (relative to project_root).
-# Each entry scopes keyword extraction to a specific named def/defonce form,
-# preventing false positives from other keyword literals in the same file.
+# Used by `check-keys` only — each entry scopes keyword extraction to a specific
+# named def/defonce form, preventing false positives from other keyword literals.
 # [[check-keys.db_ident_defs]]
 # file = "src/main/app/schema.cljs"
 # def  = "built-in-types"

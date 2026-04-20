@@ -6,6 +6,12 @@ use rayon::prelude::*;
 use crate::config::{AppConfig, DbIdentDef};
 use crate::parser::{self, SExp};
 
+/// File path and line number of a key's first occurrence in source.
+pub struct KeyLocation {
+    pub file: PathBuf,
+    pub line: u32,
+}
+
 /// Collect all referenced translation keys from source files via AST analysis.
 ///
 /// Two-pass analysis per file:
@@ -38,6 +44,55 @@ pub fn collect_referenced_keys(files: &[PathBuf], config: &AppConfig) -> HashSet
             ctx.keys.into_iter().collect::<Vec<_>>()
         })
         .collect()
+}
+
+/// Collect referenced keys from explicit `i18n_functions` calls and
+/// `translation_key_attributes` map entries, with the first source location per key.
+///
+/// `alert_functions`, `ui_functions`/`ui_namespaces`, and `ui_attributes` map scanning
+/// are excluded to prevent false positives in `check-missing`.
+pub fn collect_referenced_keys_strict(
+    files: &[PathBuf],
+    config: &AppConfig,
+) -> HashMap<String, KeyLocation> {
+    // Collect (key, file, line) from each file in parallel
+    let mut all_occurrences: Vec<(String, PathBuf, u32)> = files
+        .par_iter()
+        .flat_map(|path| {
+            let Ok(source) = std::fs::read_to_string(path) else {
+                return Vec::new();
+            };
+            let Ok(forms) = parser::parse(&source) else {
+                return Vec::new();
+            };
+
+            let mut ctx = CollectorContext::new_strict(config);
+
+            // Pass 1: build symbol table from top-level defs
+            for form in &forms {
+                ctx.collect_def_bindings(form);
+            }
+
+            // Pass 2: collect referenced keys
+            for form in &forms {
+                ctx.collect_keys(form);
+            }
+
+            ctx.key_locations
+                .into_iter()
+                .map(|(key, line)| (key, path.clone(), line))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    // Sort by (file, line) for deterministic first-occurrence selection
+    all_occurrences.sort_by(|a, b| a.1.cmp(&b.1).then(a.2.cmp(&b.2)));
+
+    let mut locations: HashMap<String, KeyLocation> = HashMap::new();
+    for (key, file, line) in all_occurrences {
+        locations.entry(key).or_insert(KeyLocation { file, line });
+    }
+    locations
 }
 
 /// Collect i18n keys derived from built-in db-ident definitions.
@@ -191,13 +246,20 @@ struct CollectorContext {
     alert_functions: Vec<String>,
     ui_functions: Vec<String>,
     ui_namespaces: Vec<String>,
-    /// Combined list of translation key attribute names (`translation_key_attributes` ∪ `ui_attributes`).
+    /// Translation key attribute names used for map-entry scanning.
+    /// In strict mode: only `translation_key_attributes` (excludes `ui_attributes`).
+    /// In normal mode: `translation_key_attributes` ∪ `ui_attributes`.
     all_key_attributes: Vec<String>,
     keys: HashSet<String>,
+    /// key → first line number seen in the current file (1-based).
+    key_locations: HashMap<String, u32>,
     /// Symbol name → keywords from its top-level `def`/`defonce` value.
     symbol_table: HashMap<String, Vec<String>>,
     /// Stack of let-binding scopes: each frame maps symbol name → keywords from binding value.
     let_scope_stack: Vec<HashMap<String, Vec<String>>>,
+    /// When true, only collect from i18n functions and `translation_key_attributes` map entries.
+    /// `alert_functions`, `ui_functions`/`ui_namespaces`, and `ui_attributes` are excluded.
+    skip_ambient_collection: bool,
 }
 
 /// Find the value of a `(def name value)` or `(def ^:meta name value)` form.
@@ -222,10 +284,55 @@ fn walk_for_keywords(expr: &SExp, result: &mut Vec<String>) {
         SExp::Keyword(k, _) => {
             result.push(format!(":{k}"));
         }
-        SExp::List(items, _)
-        | SExp::Vector(items, _)
+        SExp::List(items, _) => {
+            // For conditional forms, only walk value/branch positions to avoid
+            // collecting keywords that appear as conditions or test-case values.
+            if let Some(SExp::Symbol(head, _)) = items.first() {
+                match head.as_str() {
+                    // Skip condition (index 1), walk then/else/body branches (index 2+)
+                    "if" | "if-not" | "when" | "when-not" => {
+                        for item in items.iter().skip(2) {
+                            walk_for_keywords(item, result);
+                        }
+                        return;
+                    }
+                    // Walk only value positions (indices 2, 4, 6, ...)
+                    "cond" => {
+                        for (i, item) in items.iter().enumerate() {
+                            if i >= 1 && i % 2 == 0 {
+                                walk_for_keywords(item, result);
+                            }
+                        }
+                        return;
+                    }
+                    // Walk only result positions (indices 3, 5, 7, ...) plus default
+                    "case" => {
+                        for (i, item) in items.iter().enumerate() {
+                            if i >= 3 && i % 2 == 1 {
+                                walk_for_keywords(item, result);
+                            }
+                        }
+                        let after_head_expr = items.len().saturating_sub(2);
+                        if after_head_expr % 2 == 1
+                            && let Some(last) = items.last()
+                        {
+                            walk_for_keywords(last, result);
+                        }
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+            for item in items {
+                walk_for_keywords(item, result);
+            }
+        }
+        SExp::Vector(items, _)
         | SExp::Set(items, _)
-        | SExp::Map(items, _) => {
+        | SExp::Map(items, _)
+        | SExp::AnonFn(items, _)
+        | SExp::ReaderConditional(items, _)
+        | SExp::ReaderConditionalSplicing(items, _) => {
             for item in items {
                 walk_for_keywords(item, result);
             }
@@ -246,12 +353,26 @@ fn walk_for_keywords(expr: &SExp, result: &mut Vec<String>) {
 
 impl CollectorContext {
     fn new(config: &AppConfig) -> Self {
-        let mut all_key_attributes = config.check_keys.translation_key_attributes.clone();
-        for attr in &config.ui_attributes {
-            if !all_key_attributes.contains(attr) {
-                all_key_attributes.push(attr.clone());
+        Self::new_inner(config, false)
+    }
+
+    fn new_strict(config: &AppConfig) -> Self {
+        Self::new_inner(config, true)
+    }
+
+    fn new_inner(config: &AppConfig, skip_ambient_collection: bool) -> Self {
+        let all_key_attributes = if skip_ambient_collection {
+            // Strict mode: only explicit translation key attributes, not generic UI attributes.
+            config.check_keys.translation_key_attributes.clone()
+        } else {
+            let mut attrs = config.check_keys.translation_key_attributes.clone();
+            for attr in &config.ui_attributes {
+                if !attrs.contains(attr) {
+                    attrs.push(attr.clone());
+                }
             }
-        }
+            attrs
+        };
         Self {
             i18n_functions: config.i18n_functions.clone(),
             alert_functions: config.alert_functions.clone(),
@@ -259,9 +380,17 @@ impl CollectorContext {
             ui_namespaces: config.ui_namespaces.clone(),
             all_key_attributes,
             keys: HashSet::new(),
+            key_locations: HashMap::new(),
             symbol_table: HashMap::new(),
             let_scope_stack: Vec::new(),
+            skip_ambient_collection,
         }
+    }
+
+    /// Insert a key and record its line number if this is the first occurrence in the file.
+    fn insert_key(&mut self, key: String, line: u32) {
+        self.key_locations.entry(key.clone()).or_insert(line);
+        self.keys.insert(key);
     }
 
     /// Check if a function name is an i18n translation function.
@@ -417,13 +546,13 @@ impl CollectorContext {
             // (t :keyword) or (t symbol) or (t (if ...)) or (t (or ...))
             if items.len() >= 2 {
                 match &items[1] {
-                    SExp::Keyword(k, _) => {
-                        self.keys.insert(format!(":{k}"));
+                    SExp::Keyword(k, span) => {
+                        self.insert_key(format!(":{k}"), span.line);
                     }
-                    SExp::Symbol(sym, _) => {
+                    SExp::Symbol(sym, sym_span) => {
                         if let Some(keywords) = self.lookup_symbol(sym.as_str()) {
                             for kw in keywords {
-                                self.keys.insert(kw);
+                                self.insert_key(kw, sym_span.line);
                             }
                         }
                     }
@@ -434,80 +563,94 @@ impl CollectorContext {
                     _ => {}
                 }
             }
-        } else if self.is_alert_fn(head_name) {
-            // Alert functions: first keyword argument is a translation key
+        } else if !self.skip_ambient_collection && self.is_alert_fn(head_name) {
+            // Alert functions: first keyword argument is a translation key.
             for arg in items.iter().skip(1) {
-                if let SExp::Keyword(k, _) = arg {
-                    self.keys.insert(format!(":{k}"));
+                if let SExp::Keyword(k, span) = arg {
+                    self.insert_key(format!(":{k}"), span.line);
                     break;
                 }
             }
-        } else if self.is_ui_fn(head_name) {
-            // UI component functions: all keyword arguments are translation keys
+        } else if !self.skip_ambient_collection && self.is_ui_fn(head_name) {
+            // UI component functions: keyword arguments are translation key references.
             for arg in items.iter().skip(1) {
-                if let SExp::Keyword(k, _) = arg {
-                    self.keys.insert(format!(":{k}"));
+                if let SExp::Keyword(k, span) = arg {
+                    self.insert_key(format!(":{k}"), span.line);
                 }
             }
         }
     }
 
-    /// Extract keyword keys from conditional forms: (if ...), (or ...), (cond ...), (case ...)
+    /// Extract translation keys from a single value position inside a conditional form.
+    ///
+    /// Handles `Keyword` (direct key), `Symbol` (resolved via scope/symbol-table),
+    /// and `List` (recursively processed as a nested conditional).
+    fn collect_conditional_item(&mut self, item: &SExp) {
+        match item {
+            SExp::Keyword(k, span) => {
+                self.insert_key(format!(":{k}"), span.line);
+            }
+            SExp::Symbol(sym, sym_span) => {
+                if let Some(keywords) = self.lookup_symbol(sym.as_str()) {
+                    for kw in keywords {
+                        self.insert_key(kw, sym_span.line);
+                    }
+                }
+            }
+            SExp::List(inner, _) => {
+                self.collect_keys_from_conditional(inner);
+            }
+            _ => {}
+        }
+    }
+
+    /// Extract translation keys from conditional forms nested inside a translation call.
+    ///
+    /// - `if`/`if-not`/`when`/`when-not`: skip condition (index 1), collect branches (index 2+)
+    /// - `or`: all arguments are potential return values
+    /// - `cond`: collect value positions (indices 2, 4, 6, ...); skip test positions
+    /// - `case`: collect result positions (indices 3, 5, 7, ...); skip test-case values
+    /// - `keyword`: synthesize key from `(keyword "ns" name)` call
     fn collect_keys_from_conditional(&mut self, items: &[SExp]) {
         if items.is_empty() {
             return;
         }
         if let SExp::Symbol(head, _) = &items[0] {
             match head.as_str() {
-                "if" | "if-not" => {
-                    // (if cond then else) — collect keywords from then and else branches
+                "if" | "if-not" | "when" | "when-not" => {
                     for item in items.iter().skip(2) {
-                        if let SExp::Keyword(k, _) = item {
-                            self.keys.insert(format!(":{k}"));
-                        } else if let SExp::List(inner, _) = item {
-                            self.collect_keys_from_conditional(inner);
-                        }
+                        self.collect_conditional_item(item);
                     }
                 }
                 "or" => {
-                    // (or val1 val2 ...) — collect all keyword values
                     for item in items.iter().skip(1) {
-                        if let SExp::Keyword(k, _) = item {
-                            self.keys.insert(format!(":{k}"));
-                        }
+                        self.collect_conditional_item(item);
                     }
                 }
                 "cond" => {
-                    // (cond test1 val1 test2 val2 ...) — collect keyword values
+                    // Value positions: indices 2, 4, 6, ... (skip head and test positions)
                     for (i, item) in items.iter().enumerate().skip(1) {
-                        if i % 2 == 0
-                            && let SExp::Keyword(k, _) = item
-                        {
-                            self.keys.insert(format!(":{k}"));
+                        if i % 2 == 0 {
+                            self.collect_conditional_item(item);
                         }
                     }
                 }
                 "case" => {
-                    // (case expr val1 result1 val2 result2 ... default)
-                    // Values (test cases) are at even indices (2, 4, 6, ...),
-                    // results (translation keys) are at odd indices (3, 5, 7, ...).
+                    // Result positions: indices 3, 5, 7, ... (skip head, expr, test-case values)
                     for (i, item) in items.iter().enumerate().skip(2) {
-                        if i % 2 == 1
-                            && let SExp::Keyword(k, _) = item
-                        {
-                            self.keys.insert(format!(":{k}"));
+                        if i % 2 == 1 {
+                            self.collect_conditional_item(item);
                         }
                     }
-                    // Default value (last item if odd count after head+expr)
-                    let after_head = items.len() - 2; // items after head and expr
+                    // Default value (last item when odd count of items after head+expr)
+                    let after_head = items.len().saturating_sub(2);
                     if after_head % 2 == 1
-                        && let Some(SExp::Keyword(k, _)) = items.last()
+                        && let Some(last) = items.last()
                     {
-                        self.keys.insert(format!(":{k}"));
+                        self.collect_conditional_item(last);
                     }
                 }
                 "keyword" => {
-                    // (keyword "namespace" name) — synthesize keyword
                     self.collect_keys_from_keyword_call(items);
                 }
                 _ => {}
@@ -520,9 +663,14 @@ impl CollectorContext {
         if items.len() >= 3
             && let SExp::Str(ns, _) = &items[1]
         {
+            let head_line = if let SExp::Symbol(_, span) = &items[0] {
+                span.line
+            } else {
+                0
+            };
             // Try to resolve the name part
             if let SExp::Str(name_part, _) = &items[2] {
-                self.keys.insert(format!(":{ns}/{name_part}"));
+                self.insert_key(format!(":{ns}/{name_part}"), head_line);
             }
             // For (keyword "ns" (name enum-val)) we can't resolve without more info,
             // but the always_used_key_patterns config handles this.
@@ -537,19 +685,17 @@ impl CollectorContext {
                 && self.is_translation_key_attr(key)
             {
                 match &items[i + 1] {
-                    SExp::Keyword(val, _) => {
-                        self.keys.insert(format!(":{val}"));
+                    SExp::Keyword(val, span) => {
+                        self.insert_key(format!(":{val}"), span.line);
                     }
-                    SExp::Symbol(sym, _) => {
-                        // Let-bound or def-bound symbol holding a translation key
+                    SExp::Symbol(sym, sym_span) => {
                         if let Some(keywords) = self.lookup_symbol(sym.as_str()) {
                             for kw in keywords {
-                                self.keys.insert(kw);
+                                self.insert_key(kw, sym_span.line);
                             }
                         }
                     }
                     SExp::List(inner, _) => {
-                        // (if cond :key-a :key-b)
                         self.collect_keys_from_conditional(inner);
                     }
                     _ => {}
@@ -850,5 +996,123 @@ translation_key_attributes = ["i18n-key", "prompt-key", "title-key"]
             keys.contains(":notify/failure"),
             "should resolve when-let bound symbol"
         );
+    }
+
+    // ── Conditional form handling ─────────────────────────────────────────────
+
+    #[test]
+    fn when_collects_body_key() {
+        let keys = collect_from_source(r"(t (when loading? :ui/loading))");
+        assert!(
+            keys.contains(":ui/loading"),
+            "when body should be collected"
+        );
+    }
+
+    #[test]
+    fn when_not_collects_body_key() {
+        let keys = collect_from_source(r"(t (when-not error? :ui/ready))");
+        assert!(
+            keys.contains(":ui/ready"),
+            "when-not body should be collected"
+        );
+    }
+
+    #[test]
+    fn if_branch_symbol_resolved() {
+        // Symbol in if branch resolved via let scope
+        let keys = collect_from_source(
+            r"
+            (let [k :msg/hello]
+              (t (if pred k :msg/fallback)))
+        ",
+        );
+        assert!(
+            keys.contains(":msg/hello"),
+            "let-bound symbol in if branch should be resolved"
+        );
+        assert!(keys.contains(":msg/fallback"));
+    }
+
+    #[test]
+    fn or_with_nested_if_collects_all_branches() {
+        let keys = collect_from_source(r"(t (or (if pred :key/a :key/b) :key/fallback))");
+        assert!(keys.contains(":key/a"));
+        assert!(keys.contains(":key/b"));
+        assert!(keys.contains(":key/fallback"));
+    }
+
+    // ── No false positives from condition positions ───────────────────────────
+
+    #[test]
+    fn no_false_positive_from_if_condition_in_let() {
+        // :not-a-i18n/key appears only in the if condition, not a translation key
+        let keys = collect_from_source(
+            r"
+            (let [k (if (= prop :not-a-i18n/key) :real/key :other/key)]
+              (t k))
+        ",
+        );
+        assert!(
+            !keys.contains(":not-a-i18n/key"),
+            "condition keyword in let binding should not be collected as a translation key"
+        );
+        assert!(keys.contains(":real/key"));
+        assert!(keys.contains(":other/key"));
+    }
+
+    #[test]
+    fn no_false_positive_from_cond_test_in_let() {
+        // :not-a-i18n/key appears in a cond test position, not a translation key
+        let keys = collect_from_source(
+            r"
+            (let [k (cond
+                      (= type :not-a-i18n/key) :real/key
+                      :else :fallback/key)]
+              (t k))
+        ",
+        );
+        assert!(
+            !keys.contains(":not-a-i18n/key"),
+            "cond test keyword in let binding should not be collected"
+        );
+        assert!(keys.contains(":real/key"));
+        assert!(keys.contains(":fallback/key"));
+    }
+
+    #[test]
+    fn no_false_positive_from_case_test_in_let() {
+        // :not-a-i18n/key appears as a case test value, not a translation key
+        let keys = collect_from_source(
+            r"
+            (let [k (case prop
+                      :not-a-i18n/key :real/key
+                      :fallback/key)]
+              (t k))
+        ",
+        );
+        assert!(
+            !keys.contains(":not-a-i18n/key"),
+            "case test-value keyword in let binding should not be collected"
+        );
+        assert!(keys.contains(":real/key"));
+        assert!(keys.contains(":fallback/key"));
+    }
+
+    #[test]
+    fn no_false_positive_from_def_condition() {
+        // :not-a-i18n/key appears only in a condition inside a def value
+        let keys = collect_from_source(
+            r"
+            (def my-key (if (= x :not-a-i18n/key) :real/key :other/key))
+            (t my-key)
+        ",
+        );
+        assert!(
+            !keys.contains(":not-a-i18n/key"),
+            "condition keyword in def value should not be collected"
+        );
+        assert!(keys.contains(":real/key"));
+        assert!(keys.contains(":other/key"));
     }
 }

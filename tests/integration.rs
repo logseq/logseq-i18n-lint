@@ -665,3 +665,162 @@ fn checker_db_ident_phantom_is_unused() {
         result.unused_keys
     );
 }
+
+// ─── check-missing tests ───
+
+fn check_missing_fixture_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/check_missing")
+}
+
+fn check_missing_config() -> AppConfig {
+    let toml = r#"
+        include_dirs = ["src"]
+        file_extensions = ["clj", "cljs", "cljc"]
+        i18n_functions = ["t", "tt", "i18n/t"]
+
+        [check-keys]
+        dicts_dir = "dicts"
+        primary_dict = "dicts/en.edn"
+        always_used_key_patterns = [
+            "^:shortcut/",
+        ]
+        ignore_key_namespaces = [
+            "deprecated",
+        ]
+    "#;
+    toml::from_str(toml).expect("check_missing test config is valid TOML")
+}
+
+#[test]
+fn check_missing_finds_undefined_keys() {
+    let config = check_missing_config();
+    let base_dir = check_missing_fixture_path();
+    let result = checker::check_missing_keys(&config, &base_dir).unwrap();
+
+    assert!(
+        result
+            .missing_keys
+            .iter()
+            .any(|e| e.key == ":sidebar/title"),
+        "should detect :sidebar/title as missing, found: {:?}",
+        result
+            .missing_keys
+            .iter()
+            .map(|e| &e.key)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        result
+            .missing_keys
+            .iter()
+            .any(|e| e.key == ":dialog/confirm-delete"),
+        "should detect :dialog/confirm-delete as missing, found: {:?}",
+        result
+            .missing_keys
+            .iter()
+            .map(|e| &e.key)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn check_missing_no_false_positives() {
+    let config = check_missing_config();
+    let base_dir = check_missing_fixture_path();
+    let result = checker::check_missing_keys(&config, &base_dir).unwrap();
+
+    for key in &[":ui/save", ":ui/cancel", ":nav/home"] {
+        assert!(
+            !result.missing_keys.iter().any(|e| e.key == *key),
+            "{key} is defined and should not be reported as missing, found: {:?}",
+            result
+                .missing_keys
+                .iter()
+                .map(|e| &e.key)
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn check_missing_always_used_filters() {
+    let config = check_missing_config();
+    let base_dir = check_missing_fixture_path();
+    let result = checker::check_missing_keys(&config, &base_dir).unwrap();
+
+    assert!(
+        !result
+            .missing_keys
+            .iter()
+            .any(|e| e.key.starts_with(":shortcut/")),
+        "shortcut keys should be filtered by always_used_key_patterns, found: {:?}",
+        result
+            .missing_keys
+            .iter()
+            .map(|e| &e.key)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn check_missing_ignore_namespace_filters() {
+    let config = check_missing_config();
+    let base_dir = check_missing_fixture_path();
+    let result = checker::check_missing_keys(&config, &base_dir).unwrap();
+
+    assert!(
+        !result
+            .missing_keys
+            .iter()
+            .any(|e| e.key == ":deprecated/extra-key"),
+        "deprecated/extra-key should be filtered by ignore_key_namespaces, found: {:?}",
+        result
+            .missing_keys
+            .iter()
+            .map(|e| &e.key)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn check_missing_all_defined_returns_empty() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let dicts_dir = temp_dir.path().join("dicts");
+    let src_dir = temp_dir.path().join("src");
+    std::fs::create_dir_all(&dicts_dir).unwrap();
+    std::fs::create_dir_all(&src_dir).unwrap();
+
+    std::fs::write(
+        dicts_dir.join("en.edn"),
+        "{\n :ui/save \"Save\"\n :ui/cancel \"Cancel\"\n}\n",
+    )
+    .unwrap();
+
+    std::fs::write(
+        src_dir.join("app.cljs"),
+        "(ns test.app)\n(defn render [] (t :ui/save) (t :ui/cancel))\n",
+    )
+    .unwrap();
+
+    let config: AppConfig = toml::from_str(
+        r#"
+        include_dirs = ["src"]
+        i18n_functions = ["t"]
+        [check-keys]
+        dicts_dir = "dicts"
+        primary_dict = "dicts/en.edn"
+    "#,
+    )
+    .unwrap();
+
+    let result = checker::check_missing_keys(&config, temp_dir.path()).unwrap();
+    assert!(
+        result.missing_keys.is_empty(),
+        "all keys defined, should have no missing keys, found: {:?}",
+        result
+            .missing_keys
+            .iter()
+            .map(|e| &e.key)
+            .collect::<Vec<_>>()
+    );
+}
