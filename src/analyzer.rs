@@ -558,9 +558,65 @@ fn analyze_list_form(ctx: &mut AnalysisContext, items: &[SExp], stack: &ContextS
         }
 
         // Generic function call — recurse into arguments.
+        //
+        // When the call site is inside a UI context (hiccup vector or UI function
+        // call) and the argument list uses keyword-arg style, values of non-UI
+        // keyword args must be analyzed with FnScope so they do not inherit the
+        // surrounding UI context.  This mirrors the explicit treatment in the
+        // `is_ui_function` branch above.
+        //
+        // Rationale: unrecognized functions (e.g. a locally-defined `button`
+        // component that is not registered in `ui_functions`) may still take
+        // `:class`, `:intent`, `:on-click`, etc. keyword args whose values are
+        // CSS class strings, identifiers, or event handlers — not translatable
+        // UI text.  Without FnScope the outer Hiccup/UiFnCall frame propagates
+        // into those values and causes false positives from `str` concatenation
+        // and `when`/`if` conditionals that produce CSS class tokens.
         _ => {
-            for item in &items[1..] {
-                analyze_form(ctx, item, stack);
+            let in_ui_context = stack.has(FrameKind::Hiccup) || stack.has(FrameKind::UiFnCall);
+            if in_ui_context {
+                let args = &items[1..];
+                let mut i = 0;
+                while i < args.len() {
+                    match &args[i] {
+                        SExp::Keyword(k, _) if i + 1 < args.len() => {
+                            let key = k.strip_prefix(':').unwrap_or(k.as_str());
+                            let val = &args[i + 1];
+                            if ctx.is_ui_attribute(key) {
+                                // UI attribute (placeholder, title, aria-label …) —
+                                // report a literal string directly; for complex
+                                // expressions analyze in the current UI context so
+                                // nested str/conditional/format calls are caught.
+                                match val {
+                                    SExp::Str(s, span) => {
+                                        ctx.report(
+                                            DiagnosticKind::FnArgText,
+                                            *span,
+                                            s,
+                                            Some(key.to_string()),
+                                        );
+                                    }
+                                    _ => analyze_form(ctx, val, stack),
+                                }
+                            } else {
+                                // Non-UI keyword arg (:class, :intent, :on-click …) —
+                                // push FnScope to prevent CSS class names and data
+                                // values from being reported as translatable UI text.
+                                let non_ui_stack = stack.push(FrameKind::FnScope);
+                                analyze_form(ctx, val, &non_ui_stack);
+                            }
+                            i += 2;
+                        }
+                        _ => {
+                            analyze_form(ctx, &args[i], stack);
+                            i += 1;
+                        }
+                    }
+                }
+            } else {
+                for item in &items[1..] {
+                    analyze_form(ctx, item, stack);
+                }
             }
         }
     }
@@ -1731,6 +1787,72 @@ mod tests {
                 .iter()
                 .any(|d| d.kind == DiagnosticKind::AlertText && d.text == "Saved"),
             "alert inside cond-> form should still be reported: {diags:?}"
+        );
+    }
+
+    // ── Generic function keyword-arg handling in UI context ────────────────────
+
+    #[test]
+    fn skips_str_concat_in_non_ui_kw_arg_of_generic_fn_in_hiccup() {
+        // Regression: generic (unregistered) function called inside a hiccup vector
+        // with keyword args whose values contain (str ...) CSS class building.
+        // :class is NOT a ui_attribute, so the string should be suppressed via FnScope.
+        let diags = analyze_source(
+            r#"[:div (button "" :class (str "to-heading-button" (when active? " is-active")))]"#,
+        );
+        assert!(
+            !diags.iter().any(|d| d.text == "to-heading-button"),
+            "CSS class string in :class of generic fn should not be reported: {diags:?}"
+        );
+        assert!(
+            !diags.iter().any(|d| d.text == "is-active"),
+            "CSS class string in :class of generic fn should not be reported: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn skips_conditional_in_non_ui_kw_arg_of_generic_fn_in_hiccup() {
+        // Regression: (when-not ...) producing a non-translatable identifier string
+        // inside a non-UI keyword arg of an unregistered function in hiccup context.
+        // :intent is NOT a ui_attribute, so "link" must not be reported.
+        let diags = analyze_source(r#"[:div (button "" :intent (when-not active? "link"))]"#);
+        assert!(
+            diags.is_empty(),
+            "identifier string in :intent of generic fn should not be reported: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn still_detects_ui_attr_in_generic_fn_in_hiccup() {
+        // :title IS a ui_attribute — its value inside a generic function in hiccup
+        // context must still be reported as UI text.
+        let diags = analyze_source(r#"[:div (button "" :title "Click to confirm" :class "btn")]"#);
+        assert!(
+            diags.iter().any(|d| d.text == "Click to confirm"),
+            "ui_attribute value in generic fn inside hiccup should be reported: {diags:?}"
+        );
+        assert!(
+            !diags.iter().any(|d| d.text == "btn"),
+            "CSS class string should not be reported: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn skips_str_concat_in_non_ui_kw_arg_of_generic_fn_in_ui_fn() {
+        // Same fix applies when the outer context is a UiFnCall (not just Hiccup).
+        // An unregistered helper called inside a shui/button arg with a :class kw
+        // should not have its CSS class strings reported.
+        let diags = analyze_source(
+            r#"(shui/button {} (inner-fn "" :class (str "base " extra) :label "Ok"))"#,
+        );
+        assert!(
+            !diags.iter().any(|d| d.text == "base"),
+            "CSS class in :class of generic fn inside ui fn should not be reported: {diags:?}"
+        );
+        // :label IS a ui_attribute — should still be reported.
+        assert!(
+            diags.iter().any(|d| d.text == "Ok"),
+            "ui_attribute :label value should still be reported: {diags:?}"
         );
     }
 }
